@@ -1,6 +1,161 @@
+<!DOCTYPE html>
 <html>
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial;
+  background-color: black;
+  color: white;
+}
+
+.header {
+  text-align: center;
+  padding: 32px;
+}
+
+.row {
+  display: -ms-flexbox; /* IE10 */
+  display: flex;
+  -ms-flex-wrap: wrap; /* IE10 */
+  flex-wrap: wrap;
+  padding: 0 4px;
+}
+
+/* Create four equal columns that sits next to each other */
+.column {
+  -ms-flex: 25%; /* IE10 */
+  flex: 25%;
+  max-width: 25%;
+  padding: 0 4px;
+}
+
+.column img {
+  margin-top: 8px;
+  vertical-align: middle;
+  width: 100%;
+}
+
+/* Responsive layout - makes a two column-layout instead of four columns */
+@media screen and (max-width: 800px) {
+  .column {
+    -ms-flex: 50%;
+    flex: 50%;
+    max-width: 50%;
+  }
+}
+
+/* Responsive layout - makes the two columns stack on top of each other instead of next to each other */
+@media screen and (max-width: 600px) {
+  .column {
+    -ms-flex: 100%;
+    flex: 100%;
+    max-width: 100%;
+  }
+}
+</style>
 <body>
-  <h1 style="font-family:'Palatino'">Alexandru Hossu</h1>
-  <p style="font-family:'Palatino'">Currently attending: Tudor Vianu National College of Computer Science (Bucharest, Romanaia)</p>
+
+<!-- Header -->
+<div class="header">
+  <h1>Alexandru Hossu - Captured Moments</h1>
+</div>
+
+<!-- Photo Grid -->
+<div class="row"> 
+  <div class="column">
+    <img src="./IMG_20240629_225756_026.jpg" style="width:100%">
+    <img src="./IMG_20240621_210106_421.jpg" style="width:100%">
+    <img src="./IMG_20230730_234403_602.webp" style="width:100%">
+    <img src="./IMG_20230902_130334_566.webp" style="width:100%">
+    <img src="./IMG_20240506_162906_605.jpg" style="width:100%">
+    <img src="./IMG_20230730_234643_901.webp" style="width:100%">
+    <img src="./IMG_20230902_130422_963.webp" style="width:100%">
+    <img src="./IMG_20240506_162908_725.jpg" style="width:100%">
+    <img src="./IMG_20230731_162423_450.webp" style="width:100%">
+    <img src="./IMG_20230903_133138_153.webp" style="width:100%">
+    <img src="./IMG_20240506_162909_457.jpg" style="width:100%">
+    <img src="./IMG_20230801_222921_457.webp" style="width:100%">
+    <img src="./IMG_20230903_133420_780.webp" style="width:100%">
+    <img src="./IMG_20240506_163002_594.jpg" style="width:100%">
+    <img src="./IMG_20230801_222941_806.webp" style="width:100%">
+    <img src="./IMG_20230905_013347_350.webp" style="width:100%">
+    <img src="./IMG_20240506_190016_098.jpg" style="width:100%">
+    <img src="./IMG_20230802_230046_051.webp" style="width:100%">
+    <img src="./IMG_20230905_013415_346.webp" style="width:100%">
+    <img src="./IMG_20240621_210105_781.jpg" style="width:100%">
+  </div>
+  <div class="column">
+    <img src="./IMG_20230804_224630_123.jpg" style="width:100%">
+    <img src="./IMG_20230905_205140_172.webp" style="width:100%">
+    <img src="./IMG_20240621_210106_759.jpg" style="width:100%">
+    <img src="./IMG_20230804_224632_199.jpg" style="width:100%">
+    <img src="./IMG_20230907_230612_050.webp" style="width:100%">
+    <img src="./IMG_20240621_210107_927.jpg" style="width:100%">
+    <img src="./IMG_20230806_150212_154.jpg" style="width:100%">
+    <img src="./IMG_20230907_230712_581.webp" style="width:100%">
+    <img src="./IMG_20240624_051506_967.jpg" style="width:100%">
+    <img src="./IMG_20230806_150212_203.jpg" style="width:100%">
+    <img src="./IMG_20230907_230733_034.webp" style="width:100%">
+    <img src="./IMG_20240624_221614_035.jpg" style="width:100%">
+    <img src="./IMG_20230806_150212_224.jpg" style="width:100%">
+    <img src="./IMG_20230907_230759_436.webp" style="width:100%">
+    <img src="./IMG_20240624_221616_013.jpg" style="width:100%">
+    <img src="./IMG_20230806_150212_342.jpg" style="width:100%">
+    <img src="./IMG_20231030_132027_173.jpg" style="width:100%">
+    <img src="./IMG_20230810_232847_951.webp" style="width:100%">
+    <img src="./IMG_20240506_162906_553.jpg" style="width:100%">
+    <img src="./IMG_20240630_212511_087.jpg" style="width:100%">
+    <img src="./IMG_20230902_130309_851.webp" style="width:100%">
+  </div>
+  <div class="column">
+    <img src="./IMG_20231201_090528_511.webp" style="width:100%">
+    <img src="./IMG_20231030_132027_215.jpg" style="width:100%">
+    <img src="./IMG_20240629_225756_108.jpg" style="width:100%">
+    <img src="./IMG_20231030_132027_272.jpg" style="width:100%">
+    <img src="./IMG_20240629_225756_801.jpg" style="width:100%">
+    <img src="./IMG_20230818_213145_727.webp" style="width:100%">
+    <img src="./IMG_20231030_132027_304.jpg" style="width:100%">
+    <img src="./IMG_20240629_225759_145.jpg" style="width:100%">
+    <img src="./IMG_20230820_225723_103.webp" style="width:100%">
+    <img src="./IMG_20231030_132029_431.jpg" style="width:100%">
+    <img src="./IMG_20240630_212421_292.jpg" style="width:100%">
+    <img src="./IMG_20230822_153605_044.webp" style="width:100%">
+    <img src="./IMG_20231030_132031_645.jpg" style="width:100%">
+    <img src="./IMG_20240630_212422_298.jpg" style="width:100%">
+    <img src="./IMG_20230822_153643_800.webp" style="width:100%">
+    <img src="./IMG_20231201_090511_222.webp" style="width:100%">
+    <img src="./IMG_20240630_212422_768.jpg" style="width:100%">
+    <img src="./IMG_20240630_212423_120.jpg" style="width:100%">
+    <img src="./IMG_20230829_223714_779.webp" style="width:100%">
+    <img src="./IMG_20230802_230215_726.webp" style="width:100%">
+  </div>
+  <div class="column">
+    <img src="./IMG_20231229_184111_928.webp" style="width:100%">
+    <img src="./IMG_20240630_212425_064.jpg" style="width:100%">
+    <img src="./IMG_20230829_223742_744.webp" style="width:100%">
+    <img src="./IMG_20231229_184127_553.webp" style="width:100%">
+    <img src="./IMG_20240630_212425_636.jpg" style="width:100%">
+    <img src="./IMG_20230831_012115_671.webp" style="width:100%">
+    <img src="./IMG_20240222_170759_376.webp" style="width:100%">
+    <img src="./IMG_20240630_212427_312.jpg" style="width:100%">
+    <img src="./IMG_20230901_003144_212.webp" style="width:100%">
+    <img src="./IMG_20240222_170815_878.webp" style="width:100%">
+    <img src="./IMG_20240630_212429_184.jpg" style="width:100%">
+    <img src="./IMG_20230901_003201_872.webp" style="width:100%">
+    <img src="./IMG_20240406_110249_606.webp" style="width:100%">
+    <img src="./IMG_20240630_212431_382.jpg" style="width:100%">
+    <img src="./IMG_20230901_003306_237.webp" style="width:100%">
+    <img src="./IMG_20240502_214625_975.jpg" style="width:100%">
+    <img src="./IMG_20240630_212431_668.jpg" style="width:100%">
+    <img src="./IMG_20230902_130213_557.webp" style="width:100%">
+    <img src="./IMG_20240506_162904_981.jpg" style="width:100%">
+    <img src="./IMG_20240630_212510_364.jpg" style="width:100%">
+  </div>
+</div>
+
 </body>
 </html>
