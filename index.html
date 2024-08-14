@@ -1,62 +1,200 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-* {
+/* Body Styling */
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #2b2b2b, #121212);
+  color: #f5f5f5;
+  overflow: hidden; /* Hide scrollbars on body */
+}
+
+/* Header Styling */
+.header {
+  text-align: center;
+  padding: 10px;
+  font-size: 1.2em; /* Smaller title */
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.6);
+  margin-bottom: 10px;
+}
+
+/* Button Container */
+.button-container {
+  text-align: center;
+  margin: 10px 0;
+}
+
+.button-container a {
+  display: inline-block;
+  padding: 10px 20px;
+  margin: 5px;
+  font-size: 1em;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  text-transform: uppercase;
+  text-decoration: none;
+  text-align: center;
+  transition: background 0.3s, transform 0.3s;
+}
+
+.instagram-button {
+  background: linear-gradient(45deg, #833ab4, #fd1d1d, #fcb045);
+}
+
+.instagram-button:hover {
+  background: linear-gradient(45deg, #fcb045, #fd1d1d, #833ab4);
+}
+
+.linkedin-button {
+  background: linear-gradient(45deg, #0077b5, #005582);
+}
+
+.linkedin-button:hover {
+  background: linear-gradient(45deg, #005582, #0077b5);
+}
+
+.button-container a:active {
+  transform: scale(0.98);
+}
+
+/* Photo Container */
+.photo-container {
+  max-height: 80vh; /* Maximum height for scrollbar */
+  overflow-y: auto; /* Enable vertical scrolling */
+  overflow-x: hidden; /* Hide horizontal scroll */
+  padding: 10px;
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-  font-family: Arial;
-  background-color: black;
-  color: white;
+/* Photo Grid */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  align-items: center; /* Center items vertically */
+  justify-items: center; /* Center items horizontally */
+  position: relative;
+  transition: filter 0.3s; /* Smooth transition for blur effect */
 }
 
-.header {
-  text-align: center;
-  padding: 32px;
-}
-
-.row {
-  display: -ms-flexbox; /* IE10 */
+/* Photo Item */
+.photo-item {
   display: flex;
-  -ms-flex-wrap: wrap; /* IE10 */
-  flex-wrap: wrap;
-  padding: 0 4px;
-}
-
-/* Create four equal columns that sits next to each other */
-.column {
-  -ms-flex: 25%; /* IE10 */
-  flex: 25%;
-  max-width: 25%;
-  padding: 0 4px;
-}
-
-.column img {
-  margin-top: 8px;
-  vertical-align: middle;
+  justify-content: center;
+  align-items: center;
   width: 100%;
+  height: 100%;
 }
 
-/* Responsive layout - makes a two column-layout instead of four columns */
-@media screen and (max-width: 800px) {
-  .column {
-    -ms-flex: 50%;
-    flex: 50%;
-    max-width: 50%;
+/* Image Styling */
+.photo-item img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  animation: drop 0.25s forwards;
+  border-radius: 8px;
+  border: 4px solid #333;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.6);
+  transition: transform 0.4s ease-in-out, box-shadow 0.4s ease-in-out;
+}
+
+.photo-item img:hover {
+  transform: scale(1.08);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.8);
+}
+
+/* Drop Animation */
+@keyframes drop {
+  from {
+    transform: translateY(-100vh);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
 
-/* Responsive layout - makes the two columns stack on top of each other instead of next to each other */
+/* Modal (popup image) Styling */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 2;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(10px);
+  overflow: hidden; /* Hide scrollbars */
+}
+
+.modal-content {
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.modal-content img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.close {
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  color: #f1f1f1;
+  font-size: 50px;
+  font-weight: bold;
+  transition: transform 0.3s ease, color 0.3s ease;
+  cursor: pointer;
+}
+
+.close:hover,
+.close:focus {
+  color: #ff4444;
+  transform: rotate(90deg); /* Stylish rotation on hover */
+}
+
+/* Blur effect when modal is open */
+.modal-open .photo-grid {
+  filter: blur(10px);
+}
+
+/* Responsive Layout */
+@media screen and (max-width: 1200px) {
+  .photo-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+
+@media screen and (max-width: 800px) {
+  .photo-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
+
 @media screen and (max-width: 600px) {
-  .column {
-    -ms-flex: 100%;
-    flex: 100%;
-    max-width: 100%;
+  .photo-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   }
 }
 </style>
+</head>
 <body>
 
 <!-- Header -->
@@ -64,98 +202,267 @@ body {
   <h1>Alexandru Hossu - Captured Moments</h1>
 </div>
 
-<!-- Photo Grid -->
-<div class="row"> 
-  <div class="column">
-    <img src="./IMG_20240629_225756_026.jpg" style="width:100%">
-    <img src="./IMG_20240621_210106_421.jpg" style="width:100%">
-    <img src="./IMG_20230730_234403_602.webp" style="width:100%">
-    <img src="./IMG_20230902_130334_566.webp" style="width:100%">
-    <img src="./IMG_20240506_162906_605.jpg" style="width:100%">
-    <img src="./IMG_20230730_234643_901.webp" style="width:100%">
-    <img src="./IMG_20230902_130422_963.webp" style="width:100%">
-    <img src="./IMG_20240506_162908_725.jpg" style="width:100%">
-    <img src="./IMG_20230731_162423_450.webp" style="width:100%">
-    <img src="./IMG_20230903_133138_153.webp" style="width:100%">
-    <img src="./IMG_20240506_162909_457.jpg" style="width:100%">
-    <img src="./IMG_20230801_222921_457.webp" style="width:100%">
-    <img src="./IMG_20230903_133420_780.webp" style="width:100%">
-    <img src="./IMG_20240506_163002_594.jpg" style="width:100%">
-    <img src="./IMG_20230801_222941_806.webp" style="width:100%">
-    <img src="./IMG_20230905_013347_350.webp" style="width:100%">
-    <img src="./IMG_20240506_190016_098.jpg" style="width:100%">
-    <img src="./IMG_20230802_230046_051.webp" style="width:100%">
-    <img src="./IMG_20230905_013415_346.webp" style="width:100%">
-    <img src="./IMG_20240621_210105_781.jpg" style="width:100%">
-  </div>
-  <div class="column">
-    <img src="./IMG_20230804_224630_123.jpg" style="width:100%">
-    <img src="./IMG_20230905_205140_172.webp" style="width:100%">
-    <img src="./IMG_20240621_210106_759.jpg" style="width:100%">
-    <img src="./IMG_20230804_224632_199.jpg" style="width:100%">
-    <img src="./IMG_20230907_230612_050.webp" style="width:100%">
-    <img src="./IMG_20240621_210107_927.jpg" style="width:100%">
-    <img src="./IMG_20230806_150212_154.jpg" style="width:100%">
-    <img src="./IMG_20230907_230712_581.webp" style="width:100%">
-    <img src="./IMG_20240624_051506_967.jpg" style="width:100%">
-    <img src="./IMG_20230806_150212_203.jpg" style="width:100%">
-    <img src="./IMG_20230907_230733_034.webp" style="width:100%">
-    <img src="./IMG_20240624_221614_035.jpg" style="width:100%">
-    <img src="./IMG_20230806_150212_224.jpg" style="width:100%">
-    <img src="./IMG_20230907_230759_436.webp" style="width:100%">
-    <img src="./IMG_20240624_221616_013.jpg" style="width:100%">
-    <img src="./IMG_20230806_150212_342.jpg" style="width:100%">
-    <img src="./IMG_20231030_132027_173.jpg" style="width:100%">
-    <img src="./IMG_20230810_232847_951.webp" style="width:100%">
-    <img src="./IMG_20240506_162906_553.jpg" style="width:100%">
-    <img src="./IMG_20240630_212511_087.jpg" style="width:100%">
-    <img src="./IMG_20230902_130309_851.webp" style="width:100%">
-  </div>
-  <div class="column">
-    <img src="./IMG_20231201_090528_511.webp" style="width:100%">
-    <img src="./IMG_20231030_132027_215.jpg" style="width:100%">
-    <img src="./IMG_20240629_225756_108.jpg" style="width:100%">
-    <img src="./IMG_20231030_132027_272.jpg" style="width:100%">
-    <img src="./IMG_20240629_225756_801.jpg" style="width:100%">
-    <img src="./IMG_20230818_213145_727.webp" style="width:100%">
-    <img src="./IMG_20231030_132027_304.jpg" style="width:100%">
-    <img src="./IMG_20240629_225759_145.jpg" style="width:100%">
-    <img src="./IMG_20230820_225723_103.webp" style="width:100%">
-    <img src="./IMG_20231030_132029_431.jpg" style="width:100%">
-    <img src="./IMG_20240630_212421_292.jpg" style="width:100%">
-    <img src="./IMG_20230822_153605_044.webp" style="width:100%">
-    <img src="./IMG_20231030_132031_645.jpg" style="width:100%">
-    <img src="./IMG_20240630_212422_298.jpg" style="width:100%">
-    <img src="./IMG_20230822_153643_800.webp" style="width:100%">
-    <img src="./IMG_20231201_090511_222.webp" style="width:100%">
-    <img src="./IMG_20240630_212422_768.jpg" style="width:100%">
-    <img src="./IMG_20240630_212423_120.jpg" style="width:100%">
-    <img src="./IMG_20230829_223714_779.webp" style="width:100%">
-    <img src="./IMG_20230802_230215_726.webp" style="width:100%">
-  </div>
-  <div class="column">
-    <img src="./IMG_20231229_184111_928.webp" style="width:100%">
-    <img src="./IMG_20240630_212425_064.jpg" style="width:100%">
-    <img src="./IMG_20230829_223742_744.webp" style="width:100%">
-    <img src="./IMG_20231229_184127_553.webp" style="width:100%">
-    <img src="./IMG_20240630_212425_636.jpg" style="width:100%">
-    <img src="./IMG_20230831_012115_671.webp" style="width:100%">
-    <img src="./IMG_20240222_170759_376.webp" style="width:100%">
-    <img src="./IMG_20240630_212427_312.jpg" style="width:100%">
-    <img src="./IMG_20230901_003144_212.webp" style="width:100%">
-    <img src="./IMG_20240222_170815_878.webp" style="width:100%">
-    <img src="./IMG_20240630_212429_184.jpg" style="width:100%">
-    <img src="./IMG_20230901_003201_872.webp" style="width:100%">
-    <img src="./IMG_20240406_110249_606.webp" style="width:100%">
-    <img src="./IMG_20240630_212431_382.jpg" style="width:100%">
-    <img src="./IMG_20230901_003306_237.webp" style="width:100%">
-    <img src="./IMG_20240502_214625_975.jpg" style="width:100%">
-    <img src="./IMG_20240630_212431_668.jpg" style="width:100%">
-    <img src="./IMG_20230902_130213_557.webp" style="width:100%">
-    <img src="./IMG_20240506_162904_981.jpg" style="width:100%">
-    <img src="./IMG_20240630_212510_364.jpg" style="width:100%">
+<!-- Button Container -->
+<div class="button-container">
+  <a href="https://www.instagram.com/alex_hossu" target="_blank" class="instagram-button">Personal Instagram Account</a>
+  <a href="https://www.linkedin.com/in/alexandru-hossu-99170b238/" target="_blank" class="linkedin-button">LinkedIn Profile</a>
+</div>
+
+<!-- Photo Container -->
+<div class="photo-container">
+  <div class="photo-grid" id="photo-grid">
+    <!-- Images will be injected here by JavaScript -->
   </div>
 </div>
+
+<!-- Modal for image viewing -->
+<div id="myModal" class="modal">
+  <span class="close" onclick="closeModal()">&times;</span>
+  <div class="modal-content">
+    <img id="modal-image">
+  </div>
+</div>
+
+<script>
+// Array of image sources
+const images = [
+    "IMG_20230730_234403_602.webp",
+    "IMG_20230730_234643_901.webp",
+    "IMG_20230731_162423_450.webp",
+    "IMG_20230801_222921_457.webp",
+    "IMG_20230801_222941_806.webp",
+    "IMG_20230802_230046_051.webp",
+    "IMG_20230802_230215_726.webp",
+    "IMG_20230804_224630_123.jpg",
+    "IMG_20230804_224632_199.jpg",
+    "IMG_20230806_150212_154.jpg",
+    "IMG_20230806_150212_203.jpg",
+    "IMG_20230806_150212_224.jpg",
+    "IMG_20230806_150212_342.jpg",
+    "IMG_20230810_232847_951.webp",
+    "IMG_20230814_222201_024.webp",
+    "IMG_20230818_213145_727.webp",
+    "IMG_20230820_225723_103.webp",
+    "IMG_20230822_153605_044.webp",
+    "IMG_20230822_153643_800.webp",
+    "IMG_20230826_233658_482.webp",
+    "IMG_20230829_223714_779.webp",
+    "IMG_20230829_223742_744.webp",
+    "IMG_20230831_012115_671.webp",
+    "IMG_20230901_003144_212.webp",
+    "IMG_20230901_003201_872.webp",
+    "IMG_20230901_003306_237.webp",
+    "IMG_20230902_130213_557.webp",
+    "IMG_20230902_130309_851.webp",
+    "IMG_20230902_130334_566.webp",
+    "IMG_20230902_130422_963.webp",
+    "IMG_20230903_133138_153.webp",
+    "IMG_20230903_133420_780.webp",
+    "IMG_20230905_013347_350.webp",
+    "IMG_20230905_013415_346.webp",
+    "IMG_20230905_013439_755.webp",
+    "IMG_20230905_205140_172.webp",
+    "IMG_20230907_230612_050.webp",
+    "IMG_20230907_230712_581.webp",
+    "IMG_20230907_230733_034.webp",
+    "IMG_20230907_230759_436.webp",
+    "IMG_20231030_132027_173.jpg",
+    "IMG_20231030_132027_215.jpg",
+    "IMG_20231030_132027_272.jpg",
+    "IMG_20231030_132027_304.jpg",
+    "IMG_20231030_132029_431.jpg",
+    "IMG_20231030_132031_645.jpg",
+    "IMG_20231201_090511_222.webp",
+    "IMG_20231201_090528_511.webp",
+    "IMG_20231229_184111_928.webp",
+    "IMG_20231229_184127_553.webp",
+    "IMG_20240222_170759_376.webp",
+    "IMG_20240222_170815_878.webp",
+    "IMG_20240406_110249_606.webp",
+    "IMG_20240502_214625_975.jpg",
+    "IMG_20240506_162904_981.jpg",
+    "IMG_20240506_162906_553.jpg",
+    "IMG_20240506_162906_605.jpg",
+    "IMG_20240506_162908_725.jpg",
+    "IMG_20240506_162909_457.jpg",
+    "IMG_20240506_163002_594.jpg",
+    "IMG_20240506_190016_098.jpg",
+    "IMG_20240621_210105_781.jpg",
+    "IMG_20240621_210106_421.jpg",
+    "IMG_20240621_210106_759.jpg",
+    "IMG_20240621_210107_927.jpg",
+    "IMG_20240624_051506_967.jpg",
+    "IMG_20240624_221614_035.jpg",
+    "IMG_20240624_221616_013.jpg",
+    "IMG_20240629_225756_026.jpg",
+    "IMG_20240629_225756_108.jpg",
+    "IMG_20240629_225756_801.jpg",
+    "IMG_20240629_225759_145.jpg",
+    "IMG_20240630_212421_292.jpg",
+    "IMG_20240630_212422_298.jpg",
+    "IMG_20240630_212422_768.jpg",
+    "IMG_20240630_212423_120.jpg",
+    "IMG_20240630_212425_064.jpg",
+    "IMG_20240630_212425_636.jpg",
+    "IMG_20240630_212427_312.jpg",
+    "IMG_20240630_212429_184.jpg",
+    "IMG_20240630_212431_382.jpg",
+    "IMG_20240630_212431_668.jpg",
+    "IMG_20240630_212510_364.jpg",
+    "IMG_20240630_212511_087.jpg",
+    "IMG_20240715_065419_606.jpg",
+    "IMG_20240721_204100_253.jpg",
+    "IMG_20240721_204101_443.jpg",
+    "IMG_20240727_173141_935.jpg",
+    "IMG_20240727_173142_964.jpg",
+    "IMG_20240727_173145_238.jpg",
+    "IMG_20240727_173146_082.jpg",
+    "IMG_20240729_151138_925.jpg",
+    "IMG_20240729_151139_394.jpg",
+    "IMG_20240729_151139_460.jpg",
+    "IMG_20240729_151141_358.jpg",
+    "IMG_20240805_213543_739.jpg",
+    "IMG_20240805_213551_143.jpg",
+    "IMG_20240805_213551_771.jpg",
+    "IMG_20240807_144231_249.jpg",
+    "IMG_20240807_144232_066.jpg",
+    "IMG_20240807_222548_797.jpg",
+    "IMG_20240807_222551_845.jpg",
+    "IMG_20240807_222552_204.jpg",
+    "IMG_20240807_222555_803.jpg",
+    "IMG_20240807_222556_227.jpg",
+    "IMG_20240807_222557_676.jpg",
+    "IMG_20240808_221109_069.jpg",
+    "IMG_20240808_221109_557.jpg",
+    "IMG_20240809_213150_047.jpg",
+    "IMG_20240809_213150_699.jpg",
+    "IMG_20240809_214727_743.jpg",
+    "IMG_20240809_214727_887.jpg",
+    "IMG_20240809_214729_292.jpg",
+    "IMG_20240809_214732_339.jpg",
+    "IMG_20240810_103458_768.jpg",
+    "IMG_20240810_103459_879.jpg",
+    "IMG_20240810_232400_205.jpg",
+    "IMG_20240810_232400_776.jpg",
+    "IMG_20240810_232402_434.jpg",
+    "IMG_20240810_232402_804.jpg",
+    "IMG_20240810_232405_395.jpg",
+    "IMG_20240810_232406_009.jpg",
+    "IMG_20240810_233619_256.jpg",
+    "IMG_20240810_233620_667.jpg",
+    "IMG_20240810_233624_713.jpg",
+    "IMG_20240810_233626_538.jpg",
+    "IMG_20240810_233646_586.jpg",
+    "IMG_20240810_233648_360.jpg",
+    "IMG_20240810_233816_064.jpg",
+    "IMG_20240810_233818_842.jpg",
+    "IMG_20220125_122358_539_remastered.jpg",
+    "IMG_20220125_122400_934_remastered.jpg",
+    "IMG_20220910_193749_187.jpg",
+    "IMG_20220910_194846_504.jpg",
+    "IMG_20220914_162330_544.jpg",
+    "IMG_20221201_172504_508.jpg",
+    "IMG_20230101_190620_408.jpg",
+    "IMG_20230105_163040_603.jpg",
+    "IMG_20230123_153319_427.jpg",
+    "IMG_20230124_134839_586.jpg",
+    "IMG_20230124_135438_702.jpg",
+    "IMG_20230124_214618_390.jpg",
+    "IMG_20230220_140706_650.webp",
+    "IMG_20230221_151946_930.webp",
+    "IMG_20230222_201636_549.webp",
+    "IMG_20230222_201902_840.webp",
+    "IMG_20230222_201926_754.webp",
+    "IMG_20230222_202037_635.webp",
+    "IMG_20230402_143845_050.webp",
+    "IMG_20230402_212127_497.webp",
+    "IMG_20230408_163417_988.webp",
+    "IMG_20230408_163553_141.webp",
+    "IMG_20230409_212717_574.webp",
+    "IMG_20230409_212841_451.webp",
+    "IMG_20230410_160639_550.webp",
+    "IMG_20230410_160827_054.webp",
+    "IMG_20230415_212526_658.webp",
+    "IMG_20230520_220522_305.webp",
+    "IMG_20230601_143348_721.webp",
+    "IMG_20230618_230140_059.webp",
+    "IMG_20230710_070454_078.webp",
+    "IMG_20230710_070550_870.webp",
+    "IMG_20230716_213808_960.webp",
+    "IMG_20230723_172208_702.webp",
+    "IMG_20230724_233055_471.webp",
+    "IMG_20230724_233114_929.webp"
+];
+
+// Shuffle function
+function shuffle(array) {
+  let currentIndex = array.length, randomIndex;
+
+  while (currentIndex !== 0) {
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+  }
+
+  return array;
+}
+
+// Insert shuffled images into the DOM
+function loadImages() {
+  const container = document.getElementById('photo-grid');
+  const shuffledImages = shuffle([...images]);
+
+  // Determine the number of columns in the grid
+  const style = getComputedStyle(container);
+  const gridTemplateColumns = style.getPropertyValue('grid-template-columns');
+  const columnCount = gridTemplateColumns.split(' ').length;
+
+  // Calculate the number of full rows needed
+  const fullRowsCount = Math.floor(shuffledImages.length / columnCount);
+  const lastRowItems = shuffledImages.length % columnCount;
+
+  // Create a new array with only complete rows
+  const completeImages = shuffledImages.slice(0, fullRowsCount * columnCount);
+
+  let html = '';
+  for (let i = 0; i < completeImages.length; i++) {
+    html += `<div class="photo-item"><img src="${completeImages[i]}" onclick="openModal(this.src)"></div>`;
+  }
+
+  // Add the HTML to the container
+  container.innerHTML = html;
+
+  // Trigger the animation by applying the class
+  setTimeout(() => {
+    document.querySelectorAll('.photo-item img').forEach((img, index) => {
+      img.style.animationDelay = `${index * 0.1}s`; // Stagger the animation
+    });
+  }, 100); // Delay to allow layout to complete before animations start
+}
+
+// Open modal
+function openModal(src) {
+  const modal = document.getElementById("myModal");
+  const modalImg = document.getElementById("modal-image");
+  const body = document.body;
+
+  modal.style.display = "block";
+  modalImg.src = src;
+  body.classList.add('modal-open'); // Add blur to background
+}
+
+// Close modal
+function closeModal() {
+  const modal = document.getElementById("myModal");
+  const body = document.body;
+
+  modal.style.display = "none";
+  body.classList.remove('modal-open'); // Remove blur from background
+}
+
+// Load images on page load
+window.onload = loadImages;
+</script>
 
 </body>
 </html>
