@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>.alex</title>
+  <style>
+    @font-face {
+      font-family: 'ShareTechMono';
+      src: url('ShareTechMono-Regular.ttf');
+    }
+
+    body {
+      background-color: #0d0d0d;
+      color: #b0b0b0;
+      font-family: 'ShareTechMono', monospace;
+      padding: 50px;
+      line-height: 1.6;
+      font-weight: 400;
+      font-variant-ligatures: none;
+      text-rendering: optimizeSpeed;
+    }
+
+    .terminal {
+      max-width: 800px;
+      margin: auto;
+      border: 2px solid #8b0000;
+      padding: 30px;
+      background-color: #151515;
+      box-shadow: 0 0 25px rgba(139, 0, 0, 0.6);
+    }
+
+    .highlight {
+      color: #8b0000;
+    }
+
+    .terminal p {
+      margin-bottom: 20px;
+    }
+
+    .social-links {
+      margin-top: 20px;
+      text-align: right;
+    }
+
+    .hacker-btn {
+      text-decoration: none;
+      color: #aaa;
+      background-color: transparent;
+      border: 2px solid #550000;
+      padding: 8px 14px;
+      transition: background 0.3s, color 0.3s, box-shadow 0.3s;
+      margin-left: 12px;
+      font-size: 0.95em;
+    }
+
+    .hacker-btn:first-child {
+      margin-left: 0;
+    }
+
+    .hacker-btn:hover {
+      background-color: #8b0000;
+      color: #fff;
+      box-shadow: 0 0 10px rgba(139, 0, 0, 0.6);
+    }
+
+    /* Responsive styles */
+    @media (max-width: 600px) {
+      body {
+        padding: 20px;
+      }
+      .terminal {
+        padding: 20px;
+      }
+      .social-links {
+        text-align: center;
+      }
+      .hacker-btn {
+        margin: 10px 5px 0 5px;
+        font-size: 0.9em;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="terminal">
+    <p>
+      My name is Alexandru Hossu. I am currently studying at
+      <span class="highlight">Tudor Vianu National High School of Computer Science</span>, Bucharest, Romania.
+    </p>
+    <p>
+      Passionate about cybersecurity, I am proud to be a member of Romania's
+      <span class="highlight">National Cybersecurity Team</span> in 2024, following outstanding results in the
+      <span class="highlight">National Cybersecurity Olympiad</span>. I continuously work to enhance my skills, and my commitment has led me to win several CTF competitions.
+    </p>
+    <p>
+      Besides cybersecurity, I am also interested in
+      <span class="highlight">Artificial Intelligence (AI)</span>, particularly
+      <span class="highlight">Image Recognition</span> and
+      <span class="highlight">Natural Language Processing</span>.
+    </p>
+
+    <div class="social-links">
+      <a class="hacker-btn" href="https://discordapp.com/users/691188707084206102" target="_blank">Discord</a>
+      <a class="hacker-btn" href="https://www.linkedin.com/in/alexandru-hossu-99170b238/" target="_blank">LinkedIn</a>
+    </div>
+  </div>
+</body>
+</html>
