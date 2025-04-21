@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Gallery</title>
+    <link rel="icon" type="image/jpeg" href="avatar.jpg">
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #2b2b2b, #121212);
+            color: #f5f5f5;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .scrollable-container {
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            box-sizing: border-box;
+            padding: 10px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 10px;
+            font-size: 1.2em;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.6);
+            margin-bottom: 10px;
+        }
+
+        .button-container {
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        .button-container a {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 1em;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            text-transform: uppercase;
+            text-decoration: none;
+            text-align: center;
+            transition: background 0.3s, transform 0.3s;
+        }
+
+        .instagram-button {
+            background: linear-gradient(45deg, #833ab4, #fd1d1d, #fcb045);
+        }
+
+        .instagram-button:hover {
+            background: linear-gradient(45deg, #fcb045, #fd1d1d, #833ab4);
+        }
+
+        .linkedin-button {
+            background: linear-gradient(45deg, #0077b5, #005582);
+        }
+
+        .linkedin-button:hover {
+            background: linear-gradient(45deg, #005582, #0077b5);
+        }
+
+        .button-container a:active {
+            transform: scale(0.98);
+        }
+
+        .photo-container {
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            align-items: center;
+            justify-items: center;
+            position: relative;
+            transition: filter 0.3s;
+        }
+
+        .photo-item {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        .photo-item img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            animation: drop 0.25s forwards;
+            border-radius: 8px;
+            border: 4px solid #333;
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.6);
+            transition: transform 0.4s ease-in-out, box-shadow 0.4s ease-in-out;
+        }
+
+        .photo-item img:hover {
+            transform: scale(1.08);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.8);
+        }
+
+        @keyframes drop {
+            from {
+                transform: translateY(-100vh);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            overflow: hidden;
+        }
+
+        .modal-content {
+            margin: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        .modal-content img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+
+        .close {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            color: #f1f1f1;
+            font-size: 50px;
+            font-weight: bold;
+            transition: transform 0.3s ease, color 0.3s ease;
+            cursor: pointer;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: #ff4444;
+            transform: rotate(90deg);
+        }
+
+        .modal-open .photo-grid {
+            filter: blur(10px);
+        }
+
+        @media screen and (max-width: 1200px) {
+            .photo-grid {
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            }
+        }
+
+        @media screen and (max-width: 800px) {
+            .photo-grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            }
+        }
+
+        @media screen and (max-width: 600px) {
+            .photo-grid {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="scrollable-container">
+
+        <div class="photo-container">
+            <div class="photo-grid" id="photo-grid"></div>
+        </div>
+
+    </div>
+
+    <div id="myModal" class="modal">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <div class="modal-content">
+            <img id="modal-image">
+        </div>
+    </div>
+
+    <script>
+        const images = [
+            "./photos/IMG_20230730_234403_602.webp",
+            "./photos/IMG_20230730_234643_901.webp",
+            "./photos/IMG_20230731_162423_450.webp",
+            "./photos/IMG_20230801_222921_457.webp",
+            "./photos/IMG_20230801_222941_806.webp",
+            "./photos/IMG_20230802_230046_051.webp",
+            "./photos/IMG_20230802_230215_726.webp",
+            "./photos/IMG_20230804_224630_123.jpg",
+            "./photos/IMG_20230804_224632_199.jpg",
+            "./photos/IMG_20230806_150212_154.jpg",
+            "./photos/IMG_20230806_150212_203.jpg",
+            "./photos/IMG_20230806_150212_224.jpg",
+            "./photos/IMG_20230806_150212_342.jpg",
+            "./photos/IMG_20230810_232847_951.webp",
+            "./photos/IMG_20230814_222201_024.webp",
+            "./photos/IMG_20230818_213145_727.webp",
+            "./photos/IMG_20230820_225723_103.webp",
+            "./photos/IMG_20230822_153605_044.webp",
+            "./photos/IMG_20230822_153643_800.webp",
+            "./photos/IMG_20230826_233658_482.webp",
+            "./photos/IMG_20230829_223714_779.webp",
+            "./photos/IMG_20230829_223742_744.webp",
+            "./photos/IMG_20230831_012115_671.webp",
+            "./photos/IMG_20230901_003144_212.webp",
+            "./photos/IMG_20230901_003201_872.webp",
+            "./photos/IMG_20230901_003306_237.webp",
+            "./photos/IMG_20230902_130213_557.webp",
+            "./photos/IMG_20230902_130309_851.webp",
+            "./photos/IMG_20230902_130334_566.webp",
+            "./photos/IMG_20230902_130422_963.webp",
+            "./photos/IMG_20230903_133138_153.webp",
+            "./photos/IMG_20230903_133420_780.webp",
+            "./photos/IMG_20230905_013347_350.webp",
+            "./photos/IMG_20230905_013415_346.webp",
+            "./photos/IMG_20230905_013439_755.webp",
+            "./photos/IMG_20230905_205140_172.webp",
+            "./photos/IMG_20230907_230612_050.webp",
+            "./photos/IMG_20230907_230712_581.webp",
+            "./photos/IMG_20230907_230733_034.webp",
+            "./photos/IMG_20230907_230759_436.webp",
+            "./photos/IMG_20231030_132027_173.jpg",
+            "./photos/IMG_20231030_132027_215.jpg",
+            "./photos/IMG_20231030_132027_272.jpg",
+            "./photos/IMG_20231030_132027_304.jpg",
+            "./photos/IMG_20231030_132029_431.jpg",
+            "./photos/IMG_20231030_132031_645.jpg",
+            "./photos/IMG_20231201_090511_222.webp",
+            "./photos/IMG_20231201_090528_511.webp",
+            "./photos/IMG_20231229_184111_928.webp",
+            "./photos/IMG_20231229_184127_553.webp",
+            "./photos/IMG_20240222_170759_376.webp",
+            "./photos/IMG_20240222_170815_878.webp",
+            "./photos/IMG_20240406_110249_606.webp",
+            "./photos/IMG_20240502_214625_975.jpg",
+            "./photos/IMG_20240506_162904_981.jpg",
+            "./photos/IMG_20240506_162906_553.jpg",
+            "./photos/IMG_20240506_162906_605.jpg",
+            "./photos/IMG_20240506_162908_725.jpg",
+            "./photos/IMG_20240506_162909_457.jpg",
+            "./photos/IMG_20240506_163002_594.jpg",
+            "./photos/IMG_20240506_190016_098.jpg",
+            "./photos/IMG_20240621_210105_781.jpg",
+            "./photos/IMG_20240621_210106_421.jpg",
+            "./photos/IMG_20240621_210106_759.jpg",
+            "./photos/IMG_20240621_210107_927.jpg",
+            "./photos/IMG_20240624_051506_967.jpg",
+            "./photos/IMG_20240624_221614_035.jpg",
+            "./photos/IMG_20240624_221616_013.jpg",
+            "./photos/IMG_20240629_225756_026.jpg",
+            "./photos/IMG_20240629_225756_108.jpg",
+            "./photos/IMG_20240629_225756_801.jpg",
+            "./photos/IMG_20240629_225759_145.jpg",
+            "./photos/IMG_20240630_212421_292.jpg",
+            "./photos/IMG_20240630_212422_298.jpg",
+            "./photos/IMG_20240630_212422_768.jpg",
+            "./photos/IMG_20240630_212423_120.jpg",
+            "./photos/IMG_20240630_212425_064.jpg",
+            "./photos/IMG_20240630_212425_636.jpg",
+            "./photos/IMG_20240630_212427_312.jpg",
+            "./photos/IMG_20240630_212429_184.jpg",
+            "./photos/IMG_20240630_212431_382.jpg",
+            "./photos/IMG_20240630_212431_668.jpg",
+            "./photos/IMG_20240630_212510_364.jpg",
+            "./photos/IMG_20240630_212511_087.jpg",
+            "./photos/IMG_20240715_065419_606.jpg",
+            "./photos/IMG_20240721_204100_253.jpg",
+            "./photos/IMG_20240721_204101_443.jpg",
+            "./photos/IMG_20240727_173141_935.jpg",
+            "./photos/IMG_20240727_173142_964.jpg",
+            "./photos/IMG_20240727_173145_238.jpg",
+            "./photos/IMG_20240727_173146_082.jpg",
+            "./photos/IMG_20240729_151138_925.jpg",
+            "./photos/IMG_20240729_151139_394.jpg",
+            "./photos/IMG_20240729_151139_460.jpg",
+            "./photos/IMG_20240729_151141_358.jpg",
+            "./photos/IMG_20240805_213543_739.jpg",
+            "./photos/IMG_20240805_213551_143.jpg",
+            "./photos/IMG_20240805_213551_771.jpg",
+            "./photos/IMG_20240807_144231_249.jpg",
+            "./photos/IMG_20240807_144232_066.jpg",
+            "./photos/IMG_20240807_222548_797.jpg",
+            "./photos/IMG_20240807_222551_845.jpg",
+            "./photos/IMG_20240807_222552_204.jpg",
+            "./photos/IMG_20240807_222555_803.jpg",
+            "./photos/IMG_20240807_222556_227.jpg",
+            "./photos/IMG_20240807_222557_676.jpg",
+            "./photos/IMG_20240808_221109_069.jpg",
+            "./photos/IMG_20240808_221109_557.jpg",
+            "./photos/IMG_20240809_213150_047.jpg",
+            "./photos/IMG_20240809_213150_699.jpg",
+            "./photos/IMG_20240809_214727_743.jpg",
+            "./photos/IMG_20240809_214727_887.jpg",
+            "./photos/IMG_20240809_214729_292.jpg",
+            "./photos/IMG_20240809_214732_339.jpg",
+            "./photos/IMG_20240810_103458_768.jpg",
+            "./photos/IMG_20240810_103459_879.jpg",
+            "./photos/IMG_20240810_232400_205.jpg",
+            "./photos/IMG_20240810_232400_776.jpg",
+            "./photos/IMG_20240810_232402_434.jpg",
+            "./photos/IMG_20240810_232402_804.jpg",
+            "./photos/IMG_20240810_232405_395.jpg",
+            "./photos/IMG_20240810_232406_009.jpg",
+            "./photos/IMG_20240810_233619_256.jpg",
+            "./photos/IMG_20240810_233620_667.jpg",
+            "./photos/IMG_20240810_233624_713.jpg",
+            "./photos/IMG_20240810_233626_538.jpg",
+            "./photos/IMG_20240810_233646_586.jpg",
+            "./photos/IMG_20240810_233648_360.jpg",
+            "./photos/IMG_20240810_233816_064.jpg",
+            "./photos/IMG_20240810_233818_842.jpg",
+            "./photos/IMG_20220125_122358_539_remastered.jpg",
+            "./photos/IMG_20220125_122400_934_remastered.jpg",
+            "./photos/IMG_20220910_193749_187.jpg",
+            "./photos/IMG_20220910_194846_504.jpg",
+            "./photos/IMG_20220914_162330_544.jpg",
+            "./photos/IMG_20221201_172504_508.jpg",
+            "./photos/IMG_20230101_190620_408.jpg",
+            "./photos/IMG_20230105_163040_603.jpg",
+            "./photos/IMG_20230123_153319_427.jpg",
+            "./photos/IMG_20230124_134839_586.jpg",
+            "./photos/IMG_20230124_135438_702.jpg",
+            "./photos/IMG_20230124_214618_390.jpg",
+            "./photos/IMG_20230220_140706_650.webp",
+            "./photos/IMG_20230221_151946_930.webp",
+            "./photos/IMG_20230222_201636_549.webp",
+            "./photos/IMG_20230222_201902_840.webp",
+            "./photos/IMG_20230222_201926_754.webp",
+            "./photos/IMG_20230222_202037_635.webp",
+            "./photos/IMG_20230402_143845_050.webp",
+            "./photos/IMG_20230402_212127_497.webp",
+            "./photos/IMG_20230408_163417_988.webp",
+            "./photos/IMG_20230408_163553_141.webp",
+            "./photos/IMG_20230409_212717_574.webp",
+            "./photos/IMG_20230409_212841_451.webp",
+            "./photos/IMG_20230410_160639_550.webp",
+            "./photos/IMG_20230410_160827_054.webp",
+            "./photos/IMG_20230415_212526_658.webp",
+            "./photos/IMG_20230520_220522_305.webp",
+            "./photos/IMG_20230601_143348_721.webp",
+            "./photos/IMG_20230618_230140_059.webp",
+            "./photos/IMG_20230710_070454_078.webp",
+            "./photos/IMG_20230710_070550_870.webp",
+            "./photos/IMG_20230716_213808_960.webp",
+            "./photos/IMG_20230723_172208_702.webp",
+            "./photos/IMG_20230724_233055_471.webp",
+            "./photos/IMG_20230724_233114_929.webp"
+        ];
+
+        function shuffle(array) {
+            let currentIndex = array.length, randomIndex;
+
+            while (currentIndex !== 0) {
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex--;
+                [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+            }
+
+            return array;
+        }
+
+        function loadImages() {
+            const container = document.getElementById('photo-grid');
+            const shuffledImages = shuffle([...images]);
+
+            const style = getComputedStyle(container);
+            const gridTemplateColumns = style.getPropertyValue('grid-template-columns');
+            const columnCount = gridTemplateColumns.split(' ').length;
+
+            const fullRowsCount = Math.floor(shuffledImages.length / columnCount);
+            const lastRowItems = shuffledImages.length % columnCount;
+
+            const completeImages = shuffledImages.slice(0, fullRowsCount * columnCount);
+
+            let html = '';
+            for (let i = 0; i < completeImages.length; i++) {
+                html += `<div class="photo-item"><img src="${completeImages[i]}" onclick="openModal(this.src)"></div>`;
+            }
+
+            container.innerHTML = html;
+
+            setTimeout(() => {
+                document.querySelectorAll('.photo-item img').forEach((img, index) => {
+                    img.style.animationDelay = `${index * 0.1}s`;
+                });
+            }, 100);
+        }
+
+        function openModal(src) {
+            const modal = document.getElementById("myModal");
+            const modalImg = document.getElementById("modal-image");
+            const body = document.body;
+
+            modal.style.display = "block";
+            modalImg.src = src;
+            body.classList.add('modal-open');
+        }
+
+        function closeModal() {
+            const modal = document.getElementById("myModal");
+            const body = document.body;
+
+            modal.style.display = "none";
+            body.classList.remove('modal-open');
+        }
+
+        window.onload = loadImages;
+    </script>
+
+</body>
+
+</html>
