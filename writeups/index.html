@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>Writeups — Alexandru Hossu</title>
+    <meta name="description" content="CTF & cybersecurity writeups by Alexandru Hossu">
+    <meta property="og:title" content="Writeups" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title {
+        font-weight: 700;
+        font-size: 1.5rem;
+        color: var(--fg);
+      }
+      .site-logo {
+        height: 48px;
+        width: 48px;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+
+      .hero h1 {
+        margin: 0 0 0.5rem;
+        font-size: 2rem;
+        font-weight: 500;
+      }
+      .subtitle {
+        margin: 0;
+        opacity: 0.7;
+        font-size: 1rem;
+      }
+
+      section + section { margin-top: 2rem; }
+
+      .posts-list {
+        margin-top: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+
+      .post-card {
+        display: block;
+        padding: 1.5rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        transition:
+          transform 0.12s ease-out,
+          border-color 0.12s ease-out,
+          box-shadow 0.12s ease-out,
+          background 0.12s ease-out;
+      }
+
+      .post-card:hover {
+        text-decoration: none;
+        border-color: var(--accent);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+        background: #181818;
+      }
+
+      .post-title {
+        margin: 0 0 0.25rem;
+        font-size: 1.2rem;
+        font-weight: 500;
+      }
+
+      .post-meta {
+        margin: 0 0 0.75rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+
+      .post-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-bottom: 0.5rem;
+      }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-excerpt {
+        margin: 0;
+        font-size: 0.95rem;
+        opacity: 0.9;
+      }
+
+      .section-title {
+        margin: 2.5rem 0 0.5rem;
+        font-size: 1rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p {
+        margin: 0;
+        font-size: 0.9rem;
+        opacity: 0.6;
+      }
+
+      @media (max-width: 600px) {
+        .site-header {
+          flex-direction: row;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <main>
+        <section class="hero">
+          <h1>CTF & Cybersecurity Writeups</h1>
+          <p class="subtitle">
+            A small corner of the internet where I dump notes from CTFs, boxes and random binaries –
+            mostly so I don’t forget how I solved them.
+          </p>
+        </section>
+
+        <section>
+          <h2 class="section-title">HackTheBox</h2>
+          <div class="posts-list">
+            <a class="post-card" href="hackthebox-arno.html">
+              <h2 class="post-title">Arno (HackTheBox) — Android Unity IL2CPP</h2>
+              <p class="post-meta">
+                <span>Android • Reverse Engineering</span>
+                <span>HackTheBox Challenge</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Unity</span>
+                <span class="tag">IL2CPP</span>
+                <span class="tag">AES-CBC</span>
+                <span class="tag">Mobile</span>
+              </div>
+              <p class="post-excerpt">
+                Unity IL2CPP APK, <code>libil2cpp.so</code> + <code>global-metadata.dat</code>,
+                Il2CppDumper, then AES-CBC decrypt in Python to recover the flag.
+              </p>
+            </a>
+          </div>
+        </section>
+
+        <section>
+          <h2 class="section-title">Ukrainian National CTF 2025</h2>
+          <div class="posts-list">
+            <a class="post-card" href="ukrainian-national-ctf-2025-task-8-graphql-introspection-idor.html">
+              <h2 class="post-title">Task 8 — GraphQL Introspection + IDOR</h2>
+              <p class="post-meta">
+                <span>Web</span>
+                <span>Ukrainian National CTF 2025</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">GraphQL</span>
+                <span class="tag">IDOR</span>
+                <span class="tag">Privilege Escalation</span>
+              </div>
+              <p class="post-excerpt">
+                Use GraphQL introspection to find a hidden <code>updateUserRole</code> mutation,
+                abuse IDOR to make yourself admin, then call the admin dashboard query for the flag.
+              </p>
+            </a>
+
+            <a class="post-card" href="ukrainian-national-ctf-2025-template-trouble-ssti-hidden-debug.html">
+              <h2 class="post-title">Template Trouble — Advanced SSTI + Hidden Debug</h2>
+              <p class="post-meta">
+                <span>Web</span>
+                <span>Ukrainian National CTF 2025</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">SSTI</span>
+                <span class="tag">Jinja2</span>
+                <span class="tag">Debug Endpoint</span>
+              </div>
+              <p class="post-excerpt">
+                Bypass a Jinja2 filter using <code>sys.modules</code>, read a secret debug token from disk,
+                hit a hidden debug endpoint, then pull the flag with that token.
+              </p>
+            </a>
+
+            <a class="post-card" href="ukrainian-national-ctf-2025-task-9-ldap-injection-pass-the-hash.html">
+              <h2 class="post-title">Task 9 — LDAP Injection + Pass-the-Hash</h2>
+              <p class="post-meta">
+                <span>Web / AD</span>
+                <span>Ukrainian National CTF 2025</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">LDAPi</span>
+                <span class="tag">NTLM</span>
+                <span class="tag">PTH</span>
+              </div>
+              <p class="post-excerpt">
+                Abuse LDAP injection to dump NTLM hashes from a fake AD, then use a built-in
+                Pass-the-Hash tool to impersonate Domain Admin and read the flag from an ADMIN$ share.
+              </p>
+            </a>
+
+            <a class="post-card" href="ukrainian-national-ctf-2025-task-20-securebank-sql-injection-lfi.html">
+              <h2 class="post-title">Task 20 — SecureBank (SQLi + LFI)</h2>
+              <p class="post-meta">
+                <span>Web</span>
+                <span>Ukrainian National CTF 2025</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">SQLi</span>
+                <span class="tag">LFI</span>
+                <span class="tag">Flask</span>
+              </div>
+              <p class="post-excerpt">
+                Login bypass with SQL injection to reach the admin panel, then use a directory
+                traversal bug in the log viewer to read the Flask source and discover a hidden flag route.
+              </p>
+            </a>
+
+            <a class="post-card" href="ukrainian-national-ctf-2025-task-4-websocket-hijacking-prototype-pollution.html">
+              <h2 class="post-title">Task 4 — WebSocket Hijacking + Prototype Pollution</h2>
+              <p class="post-meta">
+                <span>Web</span>
+                <span>Ukrainian National CTF 2025</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">WebSocket</span>
+                <span class="tag">Prototype Pollution</span>
+                <span class="tag">Privilege Escalation</span>
+              </div>
+              <p class="post-excerpt">
+                Hook socket.io in the browser, send a crafted payload with <code>__proto__</code>,
+                pollute server objects into thinking you’re admin, then open the admin panel for the flag.
+              </p>
+            </a>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <p>2025 © Alexandru Hossu</p>
+      </footer>
+    </div>
+  </body>
+</html>
