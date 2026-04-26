@@ -177,14 +177,16 @@
             <li><a href="#length-checks">4. Missing frame length checks</a></li>
             <li><a href="#ht-caps">5. HT_caps_handler OOB write</a></li>
             <li><a href="#assocrsp">6. OnAssocRsp IE loop OOB read</a></li>
-            <li><a href="#patches">7. Patches</a></li>
+            <li><a href="#ie-loops">7. More IE loop OOB reads — beacon and join paths</a></li>
+            <li><a href="#wpa-ie">8. rtw_cfg80211_set_wpa_ie() — WPA IE one-byte overflow (local)</a></li>
+            <li><a href="#patches">9. Patches</a></li>
           </ul>
         </nav>
 
         <section id="background">
           <h2>1. Background</h2>
           <p>The rtl8723bs driver handles the Realtek RTL8723BS SDIO WiFi/Bluetooth combo chip, which ships in a wide range of embedded Linux devices — tablets, single-board computers, industrial controllers. It was added to the kernel's staging tree in 2015 (commit <code>554c0a3abf21</code>) and has been there ever since.</p>
-          <p>I found the primary bug — a heap overflow in <code>OnAuthClient()</code> — while reading through the driver's 802.11 management frame handling code. From there, a reviewer pointed out that the same function was also missing basic frame length guards, which led to a second patch. While I was already in the file, I found two more issues in adjacent functions: an OOB write in <code>HT_caps_handler()</code> and an OOB read in the IE parsing loop of <code>OnAssocRsp()</code>.</p>
+          <p>I found the primary bug — a heap overflow in <code>OnAuthClient()</code> — while reading through the driver's 802.11 management frame handling code. From there, a reviewer pointed out that the same function was also missing basic frame length guards, which led to a second patch. The same IE parsing pattern repeated across the driver, so I kept going. Three patch series in total: the first two cover <code>OnAuthClient()</code> and the IE handler OOBs already visible in the association path; the third adds fixes for four more functions — <code>update_beacon_info()</code>, <code>issue_assocreq()</code>, <code>join_cmd_hdl()</code>, and a separate one-byte heap overflow in <code>rtw_cfg80211_set_wpa_ie()</code> reachable via nl80211.</p>
         </section>
 
         <section id="overflow">
@@ -267,14 +269,38 @@ rtw_get_ie(pframe + ..., id, &len,
      switch (pIE->element_id) {</code></pre>
         </section>
 
+        <section id="ie-loops">
+          <h2>7. More IE loop OOB reads — beacon and join paths</h2>
+          <p>The same missing two-guard pattern turned up in three more IE parsing loops in the driver. All three read <code>pIE-&gt;length</code> from attacker-controlled frames without first checking that two bytes are available:</p>
+          <p><strong>update_beacon_info()</strong> in <code>core/rtw_wlan_util.c</code> processes incoming Beacon frames. The loop advances by <code>(pIE-&gt;length + 2)</code> per iteration with only an <code>i &lt; len</code> guard. A Beacon with a final IE where only the element ID byte is present (no length byte) causes the loop to read <code>pIE-&gt;length</code> one byte past the IE area. A malicious AP can trigger this against any station in range.</p>
+          <p><strong>issue_assocreq()</strong> and <strong>join_cmd_hdl()</strong> in <code>core/rtw_mlme_ext.c</code> walk stored network IE data — filled earlier from the AP's Beacon and Probe Response frames. A malicious AP that sends a truncated final IE in its Beacon can plant a malformed IE buffer that triggers the OOB read later, when the driver processes the association or join.</p>
+          <p>All three were fixed with the same two-guard pattern already applied to <code>OnAssocRsp()</code>: break if fewer than <code>sizeof(*pIE)</code> bytes remain before casting, and break if the IE's declared data extends past the buffer end. The increment in <code>update_beacon_info()</code> was also corrected from <code>(pIE-&gt;length + 2)</code> to <code>sizeof(*pIE) + pIE-&gt;length</code> for consistency (Dan Carpenter's suggestion).</p>
+        </section>
+
+        <section id="wpa-ie">
+          <h2>8. rtw_cfg80211_set_wpa_ie() — WPA IE one-byte overflow (local)</h2>
+          <p>This one is different from the others: it is a local attack, not over-the-air. <code>rtw_cfg80211_set_wpa_ie()</code> in <code>os_dep/ioctl_cfg80211.c</code> handles WPA and WPA2 IE data supplied via <code>NL80211_CMD_CONNECT</code>. It copies the IE into <code>supplicant_ie</code>, a 256-byte array in <code>struct security_priv</code>:</p>
+          <pre><code>memcpy(padapter->securitypriv.supplicant_ie, &pwpa[0], wpa_ielen + 2);</code></pre>
+          <p><code>wpa_ielen</code> is the raw IE length field — a <code>u8</code>, so it ranges from 0 to 255. When a local user issues a connect with a crafted WPA IE of length 255, <code>wpa_ielen + 2 = 257</code> and the <code>memcpy</code> writes one byte past the end of the 256-byte buffer into the adjacent <code>last_mic_err_time</code> field.</p>
+          <p>The existing length check in <code>rtw_parse_wpa_ie()</code> does not prevent this. It compares <code>*(wpa_ie+1)</code> against <code>(u8)(wpa_ie_len - 2)</code>. With <code>wpa_ie_len = 257</code>, the cast produces <code>(u8)(255) = 255</code>, which matches — so the check passes silently.</p>
+          <p>The fix adds an explicit bounds check before both the WPA and WPA2 copy paths:</p>
+          <pre><code>+if (wpa_ielen + 2 > sizeof(padapter->securitypriv.supplicant_ie)) {
++    ret = -EINVAL;
++    goto exit;
++}</code></pre>
+        </section>
+
         <section id="patches">
-          <h2>7. Patches</h2>
-          <p>The patches went to the staging driver mailing list in two series. The first covered the <code>OnAuthClient()</code> overflow and the <code>HT_caps_handler()</code> and <code>OnAssocRsp()</code> OOB issues. The second (v2) reworked the frame length checks in <code>OnAuthClient()</code> following Dan Carpenter's review.</p>
-          <p>The changes are all in <code>drivers/staging/rtl8723bs/</code>:</p>
+          <h2>9. Patches</h2>
+          <p>Three series went to the staging mailing list. Series 1 covered <code>OnAuthClient()</code> heap overflow; series 2 (v2) reworked the frame length checks after Dan Carpenter's review; series 3 (v2) fixed the remaining IE loops and the WPA IE overflow, with Reviewed-by from Luka Gejak.</p>
+          <p>All changes are in <code>drivers/staging/rtl8723bs/</code>:</p>
           <ul>
-            <li><code>core/rtw_mlme_ext.c</code> — <code>OnAuthClient()</code>: IE length check + frame length guards</li>
+            <li><code>core/rtw_mlme_ext.c</code> — <code>OnAuthClient()</code>: IE length check, frame length guards</li>
             <li><code>core/rtw_wlan_util.c</code> — <code>HT_caps_handler()</code>: IE length guard</li>
-            <li><code>core/rtw_mlme_ext.c</code> — <code>OnAssocRsp()</code>: IE loop header and data bounds checks</li>
+            <li><code>core/rtw_mlme_ext.c</code> — <code>OnAssocRsp()</code>: IE loop bounds checks</li>
+            <li><code>core/rtw_wlan_util.c</code> — <code>update_beacon_info()</code>: IE loop bounds checks + increment fix</li>
+            <li><code>core/rtw_mlme_ext.c</code> — <code>issue_assocreq()</code>, <code>join_cmd_hdl()</code>: IE loop bounds checks</li>
+            <li><code>os_dep/ioctl_cfg80211.c</code> — <code>rtw_cfg80211_set_wpa_ie()</code>: WPA/WPA2 IE size check</li>
           </ul>
           <div class="note">
             All of these bugs have been in the driver since the initial staging commit in 2015. The driver is still in staging as of the current kernel, so it ships in any distribution that includes the staging tree. Any device using this chip that connects to untrusted WiFi networks is exposed — the auth algorithm toggle means there is no configuration that avoids the overflow path.
