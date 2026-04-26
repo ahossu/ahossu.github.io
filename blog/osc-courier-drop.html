@@ -193,7 +193,7 @@
           <h2>Stage 2 — native attestation via JNI callback (FLAG 2)</h2>
           <p>Stage 2 is the package scan flow. The UI shows a progress indicator — "Validating label…", "Checking chain-of-custody signature…", "Device attestation in progress…" — and then marks the stop as Verified. FLAG 2 never appears on screen, which was the first hint something interesting was happening under the surface.</p>
           <p>What actually happens: the app calls into <code>libnative.so</code> with the session token from Stage 1. The native side derives a key from that token, decrypts <code>blob2</code> stored in <code>.rodata</code>, and produces an <em>attestation</em> string. That attestation is FLAG 2.</p>
-          <p>The issue is that it's not returned as a return value. The native code calls back into Java via JNI: either <code>onScanSuccess(attestation)</code> on a callback interface, or directly into a repository class like <code>RouteRepository.saveAttestation(attestation)</code>. The UI just shows "Verified" and the flag disappears into memory.</p>
+          <p>The issue is that it's not returned as a return value. The native code calls back into Java via JNI: either <code>onScanSuccess(attestation)</code> on a callback interface, or directly into a repository class like <code>RouteRepository.saveAttestation(attestation)</code>. The UI just shows "Verified" and the flag disappears into memory. The Diagnostics screen shows only a short truncated hash of the attestation — not the full value — so reading it from there won't work.</p>
           <p>Two good interception points with Frida:</p>
           <ul>
             <li>Hook the Java method that receives the callback — read the string argument directly</li>
@@ -219,7 +219,7 @@
             <li>Frida-related substrings in <code>/proc/self/maps</code></li>
           </ul>
           <p>I bypassed it by patching the smali. Decompile with apktool, find the branch that gates on the guard result, flip it, rebuild and sign. Once the guard was removed, <code>key3</code> is derived from the Stage 2 attestation (FLAG 2 feeds directly here), <code>blob3</code> is decrypted, and the locker receipt — FLAG 3 — shows up in the Diagnostics section.</p>
-          <p>If patching smali isn't the preferred approach, intercepting <code>Guard.check</code> at runtime to always return <code>false</code> works as well — just make sure Frida itself doesn't trigger the detection before the hook is in place.</p>
+          <p>If patching smali isn't the preferred approach, intercepting <code>Guard.check</code> at runtime to always return <code>true</code> works as well — just make sure Frida itself doesn't trigger the detection before the hook is in place.</p>
         </section>
 
         <section id="stage4">
