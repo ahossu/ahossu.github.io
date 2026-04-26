@@ -258,7 +258,7 @@ rtw_get_ie(pframe + ..., id, &len,
 
         <section id="assocrsp">
           <h2>6. OnAssocRsp IE loop OOB read</h2>
-          <p>The IE parsing loop in <code>OnAssocRsp()</code> iterates through all information elements in the Association Response frame. The loop condition is <code>i &lt; pkt_len</code>, and at the top of each iteration it casts <code>pframe + i</code> to <code>struct ndis_80211_var_ie *</code> — which has a two-byte header (element ID + length). If the last IE in the frame starts at <code>pkt_len - 1</code>, reading <code>pIE-&gt;length</code> touches <code>pframe[pkt_len]</code>, one byte past the allocation. Additionally, even when the header bytes are in bounds, the IE's declared <code>pIE-&gt;length</code> can extend past <code>pkt_len</code>, passing a truncated IE to the handler functions.</p>
+          <p>The IE parsing loop in <code>OnAssocRsp()</code> iterates through all information elements in the Association Response frame. The loop condition is <code>i &lt; pkt_len</code>, and at the top of each iteration it casts <code>pframe + i</code> to <code>struct ndis_80211_var_ie *</code> — which has a two-byte header (element ID + length). If the last IE in the frame starts at <code>pkt_len - 1</code>, reading <code>pIE-&gt;length</code> touches <code>pframe[pkt_len]</code>, one byte past the allocation. Even when the header bytes are in bounds, the IE's declared <code>pIE-&gt;length</code> can extend past <code>pkt_len</code>, passing a truncated IE to the handler functions.</p>
           <p>The fix adds two guards at the top of the loop body:</p>
           <pre><code> for (i = (6 + WLAN_HDR_A3_LEN); i < pkt_len;) {
 +    if (i + sizeof(*pIE) > pkt_len)
