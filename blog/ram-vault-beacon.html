@@ -4,9 +4,9 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-    <title>RAM Vault Beacon — Linux Malware Forensics Writeup</title>
-    <meta name="description" content="Writeup for RAM Vault Beacon — Linux malware combining PCAP analysis, memory forensics, SHA256 key derivation, and XChaCha20-Poly1305 decryption">
-    <meta property="og:title" content="RAM Vault Beacon — Linux Malware Forensics Writeup" />
+    <title>RAM Vault Beacon (UNBR Quals 2026) — Linux Malware Forensics</title>
+    <meta name="description" content="Writeup for RAM Vault Beacon (UNBR Quals 2026) — Linux malware combining PCAP analysis, memory forensics, SHA256 key derivation, and XChaCha20-Poly1305 decryption">
+    <meta property="og:title" content="RAM Vault Beacon (UNBR Quals 2026) — Linux Malware Forensics" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
     <meta name="twitter:card" content="summary" />
@@ -150,7 +150,7 @@
         <p class="back-link">← <a href="index.html">Back to blog</a></p>
 
         <header class="post-header">
-          <h1>RAM Vault Beacon — Linux Malware Forensics</h1>
+          <h1>RAM Vault Beacon (UNBR Quals 2026) — Linux Malware Forensics</h1>
           <p class="post-subtitle">
             A Linux malware sample forks into an anti-analysis tree, stores an encrypted flag in an anonymous <code>mmap</code> region, and beacons its C2 over DNS + HTTP.
             Recovering the flag took three artifacts: a PCAP, a memory dump, and the machine's <code>/etc/machine-id</code> — miss any one of them and the key derivation fails silently.

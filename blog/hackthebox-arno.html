@@ -283,7 +283,7 @@ app_dec/assets/bin/Data/Managed/Metadata/global-metadata.dat</code></pre>
 
           <p>
             If you see both <code>libil2cpp.so</code> and <code>global-metadata.dat</code>, you’re in IL2CPP territory.
-            No nice C# decompile for you, you have to go through the native side plus metadata.
+            No nice C# decompile — I had to go through the native side plus metadata.
           </p>
         </section>
 
@@ -326,7 +326,7 @@ app_dec/assets/bin/Data/Managed/Metadata/global-metadata.dat</code></pre>
           <pre><code>cd Arno_dump/DummyDll
 ilspycmd -p Assembly-CSharp.dll -o src</code></pre>
 
-          <p>Then searched for anything that smelled like “flag”:</p>
+          <p>Then I searched for anything that smelled like “flag”:</p>
 
           <pre><code>grep -R "FlagControl" -n src
 sed -n '1,200p' src/FlagControl.cs</code></pre>

@@ -4,9 +4,9 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-    <title>KernelBackdoor — Android + Linux Kernel Module Writeup</title>
-    <meta name="description" content="Writeup for KernelBackdoor — Android APK hiding a kernel module, ioctl reverse, token XOR from libnative.so">
-    <meta property="og:title" content="KernelBackdoor — Android + Linux Kernel Module Writeup" />
+    <title>KernelBackdoor (UNBR Finals 2026) — Android + Hidden Kernel Module</title>
+    <meta name="description" content="Writeup for KernelBackdoor (UNBR Finals 2026) — Android APK hiding a kernel module, ioctl reverse, token XOR from libnative.so">
+    <meta property="og:title" content="KernelBackdoor (UNBR Finals 2026) — Android + Hidden Kernel Module" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
     <meta name="twitter:card" content="summary" />
@@ -150,7 +150,7 @@
         <p class="back-link">← <a href="index.html">Back to blog</a></p>
 
         <header class="post-header">
-          <h1>KernelBackdoor — Android APK with a Hidden Kernel Module</h1>
+          <h1>KernelBackdoor (UNBR Finals 2026) — Android + Hidden Kernel Module</h1>
           <p class="post-subtitle">
             An Android app that looks completely harmless ships a Linux kernel module in its <code>assets/</code> folder.
             I had to notice it, load it manually, reverse the XOR token from native code, and hit a single <code>ioctl</code> to get the flag back.
