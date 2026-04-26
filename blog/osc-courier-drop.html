@@ -182,7 +182,7 @@
         <section id="stage1">
           <h2>Stage 1 — dispatch code → session token (FLAG 1)</h2>
           <p>The first screen asks for a "dispatch code". Type the wrong thing and you get <em>Invalid dispatch code. Contact dispatch.</em> — generic, no hints at all. The validation logic is in a heavily obfuscated Kotlin function that applies a series of deterministic transforms: normalization, reversal, XOR with a lookup table, and a checksum comparison against a hardcoded digest.</p>
-          <p>There's no plain hash you can reverse-lookup. I traced through the transform chain statically and worked backwards to find an input that produces the expected digest. You can also hook the validation function with Frida and brute-force the PIN space — it turns out to be small enough for that to be fast.</p>
+          <p>There's no plain hash to reverse-lookup. I traced through the transform chain statically and worked backwards to find an input that produces the expected digest. Alternatively, intercepting the validation function with Frida and brute-forcing the PIN space is also viable — it's small enough that it runs fast.</p>
           <p>Once I had the right dispatch code, the session still wasn't just a flag sitting in plaintext. The code is used as a KDF input to decrypt <code>blob1</code> — a byte array embedded in the APK. Out comes a session token, which is FLAG 1, and which also gets stored in <code>EncryptedSharedPreferences</code> as the live session credential.</p>
           <div class="note">
             Everything downstream requires a valid session. The app checks for it on every screen and rejects you silently if it's missing or expired — so there's no way to skip this stage.
@@ -193,7 +193,7 @@
           <h2>Stage 2 — native attestation via JNI callback (FLAG 2)</h2>
           <p>Stage 2 is the package scan flow. The UI shows a progress indicator — "Validating label…", "Checking chain-of-custody signature…", "Device attestation in progress…" — and then marks the stop as Verified. FLAG 2 never appears on screen, which was the first hint something interesting was happening under the surface.</p>
           <p>What actually happens: the app calls into <code>libnative.so</code> with the session token from Stage 1. The native side derives a key from that token, decrypts <code>blob2</code> stored in <code>.rodata</code>, and produces an <em>attestation</em> string. That attestation is FLAG 2.</p>
-          <p>The catch — it's not returned as a return value. The native code calls back into Java via JNI: either <code>onScanSuccess(attestation)</code> on a callback interface, or directly into a repository class like <code>RouteRepository.saveAttestation(attestation)</code>. The UI just shows "Verified" and the flag disappears into memory.</p>
+          <p>The issue is that it's not returned as a return value. The native code calls back into Java via JNI: either <code>onScanSuccess(attestation)</code> on a callback interface, or directly into a repository class like <code>RouteRepository.saveAttestation(attestation)</code>. The UI just shows "Verified" and the flag disappears into memory.</p>
           <p>Two good interception points with Frida:</p>
           <ul>
             <li>Hook the Java method that receives the callback — read the string argument directly</li>
@@ -218,8 +218,8 @@
             <li><code>TracerPid</code> in <code>/proc/self/status</code></li>
             <li>Frida-related substrings in <code>/proc/self/maps</code></li>
           </ul>
-          <p>I bypassed it by patching the smali. Decompile with apktool, find the branch that gates on the guard result, flip it, rebuild and sign. With the guard out of the way, <code>key3</code> is derived from the Stage 2 attestation (FLAG 2 feeds directly here), <code>blob3</code> is decrypted, and the locker receipt — FLAG 3 — shows up in the Diagnostics section.</p>
-          <p>If you'd rather not patch smali, hooking <code>Guard.check</code> at runtime to always return <code>false</code> works too — just make sure Frida itself doesn't trip the detection before you hook it.</p>
+          <p>I bypassed it by patching the smali. Decompile with apktool, find the branch that gates on the guard result, flip it, rebuild and sign. Once the guard was removed, <code>key3</code> is derived from the Stage 2 attestation (FLAG 2 feeds directly here), <code>blob3</code> is decrypted, and the locker receipt — FLAG 3 — shows up in the Diagnostics section.</p>
+          <p>If patching smali isn't the preferred approach, intercepting <code>Guard.check</code> at runtime to always return <code>false</code> works as well — just make sure Frida itself doesn't trigger the detection before the hook is in place.</p>
         </section>
 
         <section id="stage4">
@@ -232,7 +232,7 @@ K = KDF(locker_receipt)   ← FLAG 3 feeds in here
 X-Nonce: base64(nonce)
 X-Proof: base64(HMAC-SHA256(K, canonical))</code></pre>
           <p>The local verifier (<code>POST /verify</code>) reconstructs the canonical payload, recomputes the HMAC, compares, and — if everything matches — responds with a receipt JSON containing <code>audit_token</code>. That's FLAG 4.</p>
-          <p>Two ways to get there. The easy path: hook <code>OkHttp</code>'s network interceptor, capture the full request including headers, replay it to the local server port (find the port by hooking the server startup or reading it from Diagnostics). The more thorough path: reverse the key derivation from <code>locker_receipt</code>, build the canonical payload yourself, sign it, and send your own POST. I went with the second approach — more work, but more satisfying.</p>
+          <p>Two ways to get there. The first: intercept <code>OkHttp</code>'s network layer, capture the full request including headers, and replay it to the local server port (find the port by intercepting the server startup or reading it from Diagnostics). The more thorough path: reverse the key derivation from <code>locker_receipt</code>, build the canonical payload manually, sign it, and send your own POST. I went with the second approach — more work, but more complete.</p>
           <div class="note">
             Each flag is derived from the previous one: dispatch code → session token → attestation → locker receipt → audit token. Break one link and everything after it stays locked. The chain is the whole point of the challenge.
           </div>

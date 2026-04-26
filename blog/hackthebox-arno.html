@@ -219,8 +219,8 @@
         <header class="post-header">
           <h1>Arno (HackTheBox) — Android Unity IL2CPP</h1>
           <p class="post-subtitle">
-            Classic Unity IL2CPP flow: grab the APK, dump <code>libil2cpp.so</code> +
-            <code>global-metadata.dat</code>, find key / IV / ciphertext, then let Python do the rest.
+            Classic Unity IL2CPP flow: unpack the APK, dump <code>libil2cpp.so</code> +
+            <code>global-metadata.dat</code>, find key / IV / ciphertext, then decrypt in Python.
           </p>
           <p class="post-meta">
             <span>Reverse Engineering / Android</span>
@@ -255,7 +255,7 @@
             Arno (HackTheBox)</a>. The only file you get is an Android app: <code>Arno.apk</code>.
           </p>
           <p>
-            I was expecting some mobile reversing, but as soon as I looked inside the APK it screamed “Unity IL2CPP”.
+            I was expecting some mobile reversing, but as soon as I looked inside the APK it was clearly Unity IL2CPP.
           </p>
           <p>
             The basic idea:
@@ -326,7 +326,7 @@ app_dec/assets/bin/Data/Managed/Metadata/global-metadata.dat</code></pre>
           <pre><code>cd Arno_dump/DummyDll
 ilspycmd -p Assembly-CSharp.dll -o src</code></pre>
 
-          <p>Then I searched for anything that smelled like “flag”:</p>
+          <p>Then I searched for anything flag-related:</p>
 
           <pre><code>grep -R "FlagControl" -n src
 sed -n '1,200p' src/FlagControl.cs</code></pre>
@@ -507,15 +507,15 @@ print(flag)</code></pre>
             Arno is basically a “template” Unity IL2CPP Android challenge:
           </p>
           <ul>
-            <li>Spot <code>libil2cpp.so</code> + <code>global-metadata.dat</code> inside the APK.</li>
-            <li>Use Il2CppDumper to get both native mappings and a fake C# view.</li>
-            <li>Let IDA name the interesting functions for you.</li>
+            <li>Find <code>libil2cpp.so</code> + <code>global-metadata.dat</code> inside the APK.</li>
+            <li>Use Il2CppDumper to get native mappings and a reconstructed C# view.</li>
+            <li>Use IDA with the script.json to recover function names.</li>
             <li>Map <code>&lt;PrivateImplementationDetails&gt;</code> fields to offsets in the metadata file.</li>
-            <li>Rebuild the AES-CBC decryption logic in a script and recover the flag.</li>
+            <li>Rebuild the AES-CBC decryption in a script and recover the flag.</li>
           </ul>
           <p>
-            After a couple of IL2CPP challenges like this, the workflow becomes pretty mechanical — which is nice,
-            because you can then focus on the interesting variations instead of fighting the tooling every time.
+            After a few IL2CPP challenges, the workflow becomes fairly mechanical — which is useful,
+            because it lets you focus on the actual variations instead of the tooling setup.
           </p>
         </section>
       </article>

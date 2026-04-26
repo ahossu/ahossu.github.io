@@ -192,7 +192,7 @@
   databases/notes.db          ← SQLite database
   databases/notes.db-shm      ← shared memory
   databases/notes.db-wal      ← write-ahead log</code></pre>
-          <p>The goal is to recover a note that isn't visible through normal SQL queries — because it was written to the WAL but never committed.</p>
+          <p>The target is a note that doesn't appear through normal SQL queries — it was written to the WAL but never committed.</p>
         </section>
 
         <section id="wal-pitfall">
@@ -293,7 +293,7 @@ print(obj["body"])  # → ROCSC{...}</code></pre>
             The whole trick here is that the flag is structurally invisible to SQLite's normal read path. The WAL parser and B-tree traversal need to be written from scratch — there's no shortcut through the standard library.
           </div>
           <p>
-            Honestly the crypto part at the end was the easy bit. Most of the time went into understanding the WAL format and then carefully rebuilding the page overlay without corrupting anything. Once that worked, the AES-GCM + msgpack step was almost a relief.
+            The crypto at the end was the simpler part. Most of the time went into understanding the WAL format and carefully rebuilding the page overlay without corrupting anything. Once that was working, the AES-GCM + MessagePack step followed naturally.
           </p>
         </section>
       </article>

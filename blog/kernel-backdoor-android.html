@@ -191,7 +191,7 @@ ls app_unpacked/assets/
 
 ls app_unpacked/lib/x86_64/
 # → libnative.so</code></pre>
-          <p>A kernel module shipped inside an Android app. That's the whole challenge in one observation — everything else follows from there.</p>
+          <p>A kernel module shipped inside an Android app — that's the central observation, and everything else follows from it.</p>
         </section>
 
         <section id="module">
@@ -283,7 +283,7 @@ Interceptor.attach(ioctlPtr, {
             console.log(this.buf.readUtf8String());
     }
 });</code></pre>
-          <p>Either way, the key insight is the same: you're not breaking AES, just recovering the 16-byte key from native code and handing it to the kernel module through a perfectly normal ioctl. The static path through Ghidra was faster for me than fighting the Frida detection.</p>
+          <p>Either way, the approach is the same: recover the 16-byte key from native code and pass it to the kernel module through a standard ioctl call — no need to break AES. For me, the static path through Ghidra was faster than dealing with the Frida detection.</p>
         </section>
       </article>
 
