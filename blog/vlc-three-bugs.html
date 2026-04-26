@@ -5,7 +5,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
     <title>VLC — Three Bugs in One Audit</title>
-    <meta name="description" content="Three vulnerabilities found in VLC during a single audit: SmoothParser iterator OOB dereference (CVSS 8.8), ID3v2.3 integer overflow infinite loop, and AMT IPv6 uint16_t underflow heap OOB">
+    <meta name="description" content="Three vulnerabilities found in VLC during a single audit: SmoothParser iterator OOB dereference, ID3v2.3 integer overflow infinite loop, and AMT IPv6 uint16_t underflow heap OOB">
     <meta property="og:title" content="VLC — Three Bugs in One Audit" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
@@ -171,14 +171,14 @@
         <nav class="post-toc">
           <p class="post-toc-title">On this page</p>
           <ul>
-            <li><a href="#smooth">1. SmoothParser — tautological guard, OOB iterator dereference (CVSS 8.8)</a></li>
+            <li><a href="#smooth">1. SmoothParser — tautological guard, OOB iterator dereference</a></li>
             <li><a href="#id3">2. ID3v2.3 — uint32_t overflow → infinite loop</a></li>
             <li><a href="#amt">3. AMT IPv6 — uint16_t underflow → heap OOB</a></li>
           </ul>
         </nav>
 
         <section id="smooth">
-          <h2>1. SmoothParser — tautological guard, OOB iterator dereference (CVSS 8.8)</h2>
+          <h2>1. SmoothParser — tautological guard, OOB iterator dereference</h2>
           <p>The Smooth Streaming parser in <code>modules/demux/smooth/playlist/SmoothParser.cpp</code> builds a segment timeline from <code>&lt;c&gt;</code> (chunk) elements inside a <code>&lt;StreamIndex&gt;</code>. When a chunk element doesn't have a <code>d</code> (duration) attribute, the parser tries to compute the duration from the difference between the current and next chunk's <code>t</code> (timestamp) attributes. The logic that is supposed to check "is there a next element" is wrong:</p>
           <pre><code>for(it = chunks.begin(); it != chunks.end(); ++it)
 {
@@ -203,9 +203,9 @@
           <p>Triggering it requires a crafted <code>.ism</code> Smooth Streaming manifest with at least two <code>&lt;c&gt;</code> elements where the last one omits the <code>d</code> attribute:</p>
           <pre><code>&lt;c n="0" d="20000000" t="0"/&gt;
 &lt;c n="1" t="20000000"/&gt;  &lt;!-- no d attribute → triggers OOB --&gt;</code></pre>
-          <p>The fix is a one-character change: replace <code>it != chunks.end()</code> with <code>std::next(it) != chunks.end()</code>, and correspondingly replace <code>*(it + 1)</code> with <code>*std::next(it)</code>.</p>
+          <p>The fix is two lines: replace the guard <code>it != chunks.end()</code> with <code>std::next(it) != chunks.end()</code>, and replace the dereference <code>*(it + 1)</code> with <code>*std::next(it)</code>.</p>
           <div class="note">
-            CVSS 3.1: 8.8 (AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H). Opening a crafted manifest from the network — via a URL or an embedded player — is enough to trigger the crash. No interaction beyond opening the file is required.
+            Opening a crafted manifest from the network — via a URL or an embedded player — is enough to trigger the crash. No interaction beyond opening the file is required.
           </div>
         </section>
 
@@ -258,7 +258,7 @@ pkt->i_buffer = len;      // claims 65532 bytes available</code></pre>
           <p>The block is returned to the demuxer with a pointer ~64 KB before its actual allocation and a length of 65532. Any demuxer read or write into <code>pkt-&gt;p_buffer</code> for <code>pkt-&gt;i_buffer</code> bytes accesses unallocated heap memory.</p>
           <p>Triggering this requires an attacker-controlled AMT relay — the victim opens a multicast stream URL that routes through the relay. The relay performs the normal AMT handshake, then sends a crafted subsequent IPv6 fragment with <code>Payload Length = 4</code> in the IPv6 header. AMT support is only present in VLC 4.0-dev; the 3.0.x release series is not affected.</p>
           <div class="note">
-            CVSS 3.1: 7.5 (AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:H). The high complexity reflects the requirement to control an AMT relay. There are two clean fixes: either add a <code>payload_len &lt; 8</code> check at each subtraction site, or remove the <code>&amp;&amp; !b_is_fragmented</code> exception from the guard so it catches absurd payload lengths for fragmented packets too.
+            Triggering this requires an attacker-controlled AMT relay. There are two clean fixes: either add a <code>payload_len &lt; 8</code> check at each subtraction site, or remove the <code>&amp;&amp; !b_is_fragmented</code> exception from the guard so it catches absurd payload lengths for fragmented packets too.
           </div>
         </section>
       </article>
