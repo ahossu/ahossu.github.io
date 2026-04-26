@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>libmspack — Salvage Mode Use-After-Free in Cabinet Parser</title>
+    <meta name="description" content="Use-after-free in libmspack cabd.c salvage mode: circular singly-linked list from failed second cabd_read_files() call, ASAN-confirmed heap-use-after-free in cabd_close at line 252">
+    <meta property="og:title" content="libmspack — Salvage Mode Use-After-Free in Cabinet Parser" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>libmspack — Salvage Mode Use-After-Free in Cabinet Parser</h1>
+          <p class="post-subtitle">
+            A heap use-after-free in libmspack's cabinet decompressor, triggered by a crafted <code>.cab</code> file when salvage mode is enabled. A failed second read in the salvage path leaves the file list pointer unchanged, causing a circular singly-linked list that double-frees nodes during cleanup.
+          </p>
+          <p class="post-meta">
+            <span>Vulnerability Research</span>
+            <span>libmspack</span>
+            <span>by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">C</span>
+            <span class="tag">Use-After-Free</span>
+            <span class="tag">Heap Corruption</span>
+            <span class="tag">Cabinet</span>
+            <span class="tag">ASAN</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#context">1. Context</a></li>
+            <li><a href="#salvage">2. Salvage mode double-read</a></li>
+            <li><a href="#root-cause">3. Root cause — circular list</a></li>
+            <li><a href="#crash">4. The crash path</a></li>
+            <li><a href="#trigger">5. Crafting the trigger</a></li>
+            <li><a href="#secondary">6. Secondary bug — boolean OR on error codes</a></li>
+            <li><a href="#fix">7. Fix and commit</a></li>
+          </ul>
+        </nav>
+
+        <section id="context">
+          <h2>1. Context</h2>
+          <p>libmspack is the reference C library for Microsoft Cabinet (<code>.cab</code>) files, used directly by <code>cabextract</code> and by a number of downstream package managers and installer tools. The <code>cabextract -f</code> flag enables salvage mode (<code>MSCABD_PARAM_SALVAGE = 1</code>), which tries to extract files even from structurally malformed cabinets.</p>
+          <p>I found this during a manual audit of <code>mspack/cabd.c</code>, focusing on the salvage path since it's the code that explicitly handles malformed input — and therefore the code most likely to have handled some edge cases incorrectly.</p>
+        </section>
+
+        <section id="salvage">
+          <h2>2. Salvage mode double-read</h2>
+          <p>The cabinet format stores a <code>coffFiles</code> field in the header that points to the first CFFILE entry. The parser also computes where files should be based on the CFFOLDER entries. When these two values differ, the salvage path reads files from both locations and merges the results:</p>
+          <pre><code>/* cabd.c ~line 460 */
+if (cffile_offset != cfhead_file_offset) {
+    /* Warning: cabinet has unusual file offset */
+    struct mscabd_file *forig = cab->base.files;  /* save list from first read */
+    int err2 = cabd_read_files(sys, fh, cab, fol, num_folders, num_files, salvage);
+    /* merge both lists */
+    if (forig) {
+        struct mscabd_file *fend = forig;
+        while (fend->next) fend = fend->next;
+        fend->next = cab->base.files;  /* append second list after first */
+        cab->base.files = forig;
+    }
+}</code></pre>
+        </section>
+
+        <section id="root-cause">
+          <h2>3. Root cause — circular list</h2>
+          <p><code>cabd_read_files()</code> only updates <code>cab-&gt;base.files</code> when it successfully links the first file into the list. If the second call fails before that point — for example, because the file offset from the header points past the end of the cabinet — it returns an error without ever touching <code>cab-&gt;base.files</code>. The pointer still holds the value of <code>forig</code>.</p>
+          <p>The merge code then executes:</p>
+          <pre><code>fend->next = cab->base.files   →   fend->next = forig</code></pre>
+          <p>The list now points to itself: <code>forig → ... → fend → forig → ...</code>. A circular singly-linked list.</p>
+        </section>
+
+        <section id="crash">
+          <h2>4. The crash path</h2>
+          <p>When <code>cabd_close()</code> traverses the file list to free nodes, it walks the circular list:</p>
+          <ol>
+            <li>Frees <code>forig-&gt;filename</code> and <code>forig</code></li>
+            <li>Follows <code>fend-&gt;next = forig</code> — use-after-free on freed memory</li>
+            <li>Attempts to free <code>forig-&gt;filename</code> again — double-free</li>
+            <li>Attempts to free <code>forig</code> again — double-free / heap corruption</li>
+          </ol>
+          <p>ASAN output:</p>
+          <pre><code>ERROR: AddressSanitizer: heap-use-after-free on address 0x7bc6bffe00e0
+READ of size 8 at ... thread T0
+  #0 cabd_close  mspack/cabd.c:252
+  #1 cabd_open   mspack/cabd.c:213
+
+freed by thread T0 here:
+  #1 msp_free    mspack/system.c:225</code></pre>
+          <p>The crash reproduces 100% on every run with the PoC cabinet file.</p>
+        </section>
+
+        <section id="trigger">
+          <h2>5. Crafting the trigger</h2>
+          <p>The PoC is a 62-byte cabinet file. The critical values:</p>
+          <ul>
+            <li><code>coffFiles = 100</code> (past the actual 62-byte file size)</li>
+            <li><code>cffile_offset = 44</code> (computed correctly from CFFOLDER entries)</li>
+            <li>One valid CFFILE entry at offset 44, with filename <code>x</code></li>
+          </ul>
+          <p>Flow: first read at <code>cffile_offset=44</code> succeeds, builds a one-file list. Second read seeks to offset 100 in a 62-byte file — the seek succeeds on POSIX, the subsequent read returns 0 bytes (<code>MSPACK_ERR_READ</code>), <code>cabd_read_files()</code> returns without updating <code>cab-&gt;base.files</code>. The merge loop creates the circular list. <code>cabd_close()</code> crashes at line 252.</p>
+          <p>All four conditions needed to trigger the bug are fully attacker-controlled via the crafted cabinet structure.</p>
+        </section>
+
+        <section id="secondary">
+          <h2>6. Secondary bug — boolean OR on error codes</h2>
+          <p>There's a second, independent issue one line after the merge code:</p>
+          <pre><code>err = err || err2;</code></pre>
+          <p><code>MSPACK_ERR_READ = 3</code>. If the first call succeeds (<code>err = 0</code>) and the second fails (<code>err2 = 3</code>), then <code>0 || 3 = 1 = MSPACK_ERR_ARGS</code>. The correct error code is discarded and replaced with a different error value. The fix is <code>err = err ? err : err2</code>.</p>
+        </section>
+
+        <section id="fix">
+          <h2>7. Fix and commit</h2>
+          <p>Both bugs were fixed in commit <code>c8336f2</code>, merged by Stuart Caie. The fix checks whether <code>cab-&gt;base.files</code> was actually updated by the second call before attempting the merge:</p>
+          <pre><code>/* Only merge if the second call produced a different list */
+if (forig && cab->base.files != forig) {
+    struct mscabd_file *fend = forig;
+    while (fend->next) fend = fend->next;
+    fend->next = cab->base.files;
+    cab->base.files = forig;
+} else if (forig) {
+    /* second call produced no new files; restore original list */
+    cab->base.files = forig;
+}</code></pre>
+          <div class="note">
+            The attack surface covers any application processing untrusted CAB files with salvage mode enabled. <code>cabextract -f attacker.cab</code> is a one-shot trigger with no interaction needed beyond running the command.
+          </div>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

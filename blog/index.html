@@ -192,6 +192,82 @@
           <div class="posts-list">
 
 
+            <a class="post-card" href="rtl8723bs-wifi-overflow">
+              <h2 class="post-title">rtl8723bs — WiFi Heap Overflow in the Linux Kernel</h2>
+              <p class="post-meta">
+                <span>Linux Kernel • Vulnerability Research</span>
+                <span>Kernel Security</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Linux Kernel</span>
+                <span class="tag">Staging Driver</span>
+                <span class="tag">WiFi</span>
+                <span class="tag">Heap Overflow</span>
+                <span class="tag">CVE Candidate</span>
+              </div>
+              <p class="post-excerpt">
+                Heap overflow in <code>OnAuthClient()</code> exploitable by any rogue AP within radio range — no auth required, any device affected via the auth algorithm toggle. Plus three more OOB issues in adjacent functions. Driver has been in staging since 2015.
+              </p>
+            </a>
+
+            <a class="post-card" href="vlc-three-bugs">
+              <h2 class="post-title">VLC — Three Bugs in One Audit</h2>
+              <p class="post-meta">
+                <span>Vulnerability Research</span>
+                <span>VLC Media Player</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">C++</span>
+                <span class="tag">Integer Overflow</span>
+                <span class="tag">OOB Read</span>
+                <span class="tag">DoS</span>
+                <span class="tag">Heap OOB</span>
+              </div>
+              <p class="post-excerpt">
+                Three bugs found in a single audit of VLC 4.0-dev: a tautological guard in the Smooth Streaming parser that dereferences <code>chunks.end()</code> (CVSS 8.8), a uint32_t overflow that freezes VLC permanently on a crafted ID3 tag, and a uint16_t underflow in the AMT IPv6 handler that moves a buffer pointer ~64 KB before its allocation.
+              </p>
+            </a>
+
+            <a class="post-card" href="libmspack-salvage-uaf">
+              <h2 class="post-title">libmspack — Salvage Mode Use-After-Free in Cabinet Parser</h2>
+              <p class="post-meta">
+                <span>Vulnerability Research</span>
+                <span>libmspack</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">C</span>
+                <span class="tag">Use-After-Free</span>
+                <span class="tag">Heap Corruption</span>
+                <span class="tag">Cabinet</span>
+                <span class="tag">ASAN</span>
+              </div>
+              <p class="post-excerpt">
+                Crafted <code>.cab</code> file causes a circular singly-linked list in salvage mode when the second <code>cabd_read_files()</code> call fails without updating the file list pointer. ASAN-confirmed heap-use-after-free in <code>cabd_close()</code>. Fixed in commit <code>c8336f2</code>.
+              </p>
+            </a>
+
+            <a class="post-card" href="file-libmagic-oob">
+              <h2 class="post-title">file/libmagic — OOB Read in ELF Core Note Parser</h2>
+              <p class="post-meta">
+                <span>Vulnerability Research</span>
+                <span>file / libmagic</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">C</span>
+                <span class="tag">OOB Read</span>
+                <span class="tag">ELF</span>
+                <span class="tag">libmagic</span>
+                <span class="tag">Core Dump</span>
+              </div>
+              <p class="post-excerpt">
+                Missing bounds check in <code>do_core_note()</code>'s FreeBSD <code>NT_PRPSINFO</code> path: process name read at <code>doff + argoff</code> without verifying the offset is within the buffer. Fixed in commit <code>6bb1b445</code> by Christos Zoulas.
+              </p>
+            </a>
+
             <a class="post-card" href="osc-courier-drop">
               <h2 class="post-title">CourierDrop (OSC Regional 2026) — 4-Stage Android RE</h2>
               <p class="post-meta">

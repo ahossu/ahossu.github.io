@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>rtl8723bs — WiFi Heap Overflow in the Linux Kernel</title>
+    <meta name="description" content="Heap overflow and OOB read series in the rtl8723bs staging driver: OnAuthClient memcpy overflow, missing frame length guards, HT_caps_handler OOB write, OnAssocRsp IE loop OOB read">
+    <meta property="og:title" content="rtl8723bs — WiFi Heap Overflow in the Linux Kernel" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>rtl8723bs — WiFi Heap Overflow in the Linux Kernel</h1>
+          <p class="post-subtitle">
+            A heap overflow in the Linux staging driver for the rtl8723bs WiFi chip, exploitable by any rogue AP within radio range. No authentication required. The bug has been sitting in the kernel since 2015.
+          </p>
+          <p class="post-meta">
+            <span>Linux Kernel • Vulnerability Research</span>
+            <span>Kernel Security</span>
+            <span>by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Linux Kernel</span>
+            <span class="tag">Staging Driver</span>
+            <span class="tag">WiFi</span>
+            <span class="tag">Heap Overflow</span>
+            <span class="tag">CVE Candidate</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#background">1. Background</a></li>
+            <li><a href="#overflow">2. OnAuthClient heap overflow</a></li>
+            <li><a href="#toggle">3. Auth algorithm toggle — any device is affected</a></li>
+            <li><a href="#length-checks">4. Missing frame length checks</a></li>
+            <li><a href="#ht-caps">5. HT_caps_handler OOB write</a></li>
+            <li><a href="#assocrsp">6. OnAssocRsp IE loop OOB read</a></li>
+            <li><a href="#patches">7. Patches</a></li>
+          </ul>
+        </nav>
+
+        <section id="background">
+          <h2>1. Background</h2>
+          <p>The rtl8723bs driver handles the Realtek RTL8723BS SDIO WiFi/Bluetooth combo chip, which ships in a wide range of embedded Linux devices — tablets, single-board computers, industrial controllers. It was added to the kernel's staging tree in 2015 (commit <code>554c0a3abf21</code>) and has been there ever since.</p>
+          <p>I found the primary bug — a heap overflow in <code>OnAuthClient()</code> — while reading through the driver's 802.11 management frame handling code. From there, a reviewer pointed out that the same function was also missing basic frame length guards, which led to a second patch. While I was already in the file, I found two more issues in adjacent functions: an OOB write in <code>HT_caps_handler()</code> and an OOB read in the IE parsing loop of <code>OnAssocRsp()</code>.</p>
+        </section>
+
+        <section id="overflow">
+          <h2>2. OnAuthClient heap overflow</h2>
+          <p>The function <code>OnAuthClient()</code> in <code>core/rtw_mlme_ext.c</code> processes 802.11 Authentication frames received by the station. When the AP sends an Auth sequence 2 frame using Shared Key authentication, the driver looks for a Challenge Text IE (element ID <code>0x10</code>) and copies its payload into a fixed 128-byte buffer:</p>
+          <pre><code>/* rtw_mlme_ext.c ~line 891 */
+p = rtw_get_ie(pframe + WLAN_HDR_A3_LEN + _AUTH_IE_OFFSET_,
+               WLAN_EID_CHALLENGE, (int *)&len,
+               pkt_len - WLAN_HDR_A3_LEN - _AUTH_IE_OFFSET_);
+
+if (!p)
+    goto authclnt_fail;
+
+memcpy(pmlmeinfo->chg_txt, p + 2, len);  /* len = raw IE length byte, 0-255 */</code></pre>
+          <p><code>rtw_get_ie()</code> validates that the IE fits within the received frame buffer — so the copy source is legitimate. What it does not check is whether <code>len</code> fits in the 128-byte destination <code>chg_txt[]</code>. The raw IE length field is a single byte and can be anywhere from 0 to 255. If an AP sends a Challenge Text IE with length 200, the driver writes 72 bytes past the end of <code>chg_txt</code>.</p>
+          <p>IEEE 802.11-2020 §12.3.3 is unambiguous: the Challenge Text element carries exactly 128 bytes of challenge data. The fix is a one-line addition — reject the frame if the IE length is anything other than <code>sizeof(pmlmeinfo->chg_txt)</code>:</p>
+          <pre><code>-if (!p)
++if (!p || len != sizeof(pmlmeinfo->chg_txt))</code></pre>
+          <p>The overflow target is <code>struct mlme_ext_info</code>, with <code>chg_txt</code> at offset 40. Immediately following it are <code>aid</code>, <code>bcn_interval</code>, <code>capability</code>, and a handful of protocol state flags. With a crafted length of 200, 72 bytes past the end of <code>chg_txt</code> are overwritten.</p>
+        </section>
+
+        <section id="toggle">
+          <h2>3. Auth algorithm toggle — any device is affected</h2>
+          <p>The overflow is in the Shared Key path, which at first looks like it only affects devices explicitly configured for WEP Shared Key authentication. It does not. There's a toggle in the same function:</p>
+          <pre><code>if (status == WLAN_STATUS_NOT_SUPPORTED_AUTH_ALG) {
+    pmlmeinfo->auth_algo ^= 1;   /* toggle Open ↔ Shared */
+    pmlmeinfo->reauth_count = 0;
+    set_link_timer(pmlmeext, 1);
+    return _SUCCESS;
+}</code></pre>
+          <p>The attack sequence is two frames. First, send an Auth Response (seq=2, status=13 — <code>WLAN_STATUS_NOT_SUPPORTED_AUTH_ALG</code>). The driver toggles from Open System to Shared Key and sends a new Auth Request. Then immediately send a second Auth Response (seq=2, status=0) with a crafted Challenge Text IE. The driver is now in the Shared Key path and executes the overflow unconditionally.</p>
+          <p>This works against any device running this driver that is attempting to connect to a network, regardless of how the device is configured. The attacker just needs to be within radio range.</p>
+        </section>
+
+        <section id="length-checks">
+          <h2>4. Missing frame length checks</h2>
+          <p>After I submitted the first patch, Dan Carpenter pointed out that <code>OnAuthClient()</code> was also missing basic frame length validation. Two problems:</p>
+          <p>First, <code>get_da(pframe)</code> reads bytes 4–9 of the frame (the destination MAC address), and <code>GetPrivacy(pframe)</code> reads the Frame Control field at bytes 0–1. Both are called before any check that <code>pkt_len</code> is at least <code>WLAN_HDR_A3_LEN</code> (24 bytes).</p>
+          <p>Second, when <code>pkt_len &lt; WLAN_HDR_A3_LEN + _AUTH_IE_OFFSET_</code> (which is 30 bytes), the length computation for the <code>rtw_get_ie()</code> call wraps:</p>
+          <pre><code>/* pkt_len and WLAN_HDR_A3_LEN are both 'uint' (unsigned) */
+/* If pkt_len < 30: this wraps to a value near 4 GB */
+rtw_get_ie(pframe + ..., id, &len,
+           pkt_len - WLAN_HDR_A3_LEN - _AUTH_IE_OFFSET_);</code></pre>
+          <p><code>rtw_get_ie()</code> then scans well past the end of the frame buffer with that ~4 GB limit. The fix adds two guards: one before the first <code>pframe</code> access, and a second after computing <code>offset</code> (0 or 4) to cover the <code>seq</code>/<code>status</code> reads and prevent the wrap:</p>
+          <pre><code>+if (pkt_len < WLAN_HDR_A3_LEN)
++    goto authclnt_fail;
+
+ /* check A1 matches or not */
+ if (memcmp(myid(&(padapter->eeprompriv)), get_da(pframe), ETH_ALEN))
+     return _SUCCESS;
+ ...
+ offset = (GetPrivacy(pframe)) ? 4 : 0;
+
++if (pkt_len < WLAN_HDR_A3_LEN + offset + 6)
++    goto authclnt_fail;</code></pre>
+        </section>
+
+        <section id="ht-caps">
+          <h2>5. HT_caps_handler OOB write</h2>
+          <p>While in the same file, I found a similar issue in <code>HT_caps_handler()</code> in <code>core/rtw_wlan_util.c</code>. This function processes the HT Capabilities IE from an Association Response. It iterates <code>pIE-&gt;length</code> bytes and writes them into <code>HT_caps.u.HT_cap[]</code>, which is a fixed 26-byte array:</p>
+          <pre><code>for (i = 0; i < (pIE->length); i++) {
+    HT_caps.u.HT_cap[i] = pIE->data[i];
+    ...
+}</code></pre>
+          <p>Since <code>pIE-&gt;length</code> is a raw byte from the received frame (0–255), a malicious AP can cause up to 229 bytes of out-of-bounds writes into adjacent fields of <code>struct mlme_ext_info</code>. The function <code>HT_info_handler()</code> in the same file already carries the correct guard — I applied the same pattern:</p>
+          <pre><code>+if (pIE->length > sizeof(struct HT_caps_element))
++    return;</code></pre>
+        </section>
+
+        <section id="assocrsp">
+          <h2>6. OnAssocRsp IE loop OOB read</h2>
+          <p>The IE parsing loop in <code>OnAssocRsp()</code> iterates through all information elements in the Association Response frame. The loop condition is <code>i &lt; pkt_len</code>, and at the top of each iteration it casts <code>pframe + i</code> to <code>struct ndis_80211_var_ie *</code> — which has a two-byte header (element ID + length). If the last IE in the frame starts at <code>pkt_len - 1</code>, reading <code>pIE-&gt;length</code> touches <code>pframe[pkt_len]</code>, one byte past the allocation. Additionally, even when the header bytes are in bounds, the IE's declared <code>pIE-&gt;length</code> can extend past <code>pkt_len</code>, passing a truncated IE to the handler functions.</p>
+          <p>The fix adds two guards at the top of the loop body:</p>
+          <pre><code> for (i = (6 + WLAN_HDR_A3_LEN); i < pkt_len;) {
++    if (i + sizeof(*pIE) > pkt_len)
++        break;
+     pIE = (struct ndis_80211_var_ie *)(pframe + i);
++    if (i + sizeof(*pIE) + pIE->length > pkt_len)
++        break;
+     switch (pIE->element_id) {</code></pre>
+        </section>
+
+        <section id="patches">
+          <h2>7. Patches</h2>
+          <p>The patches went to the staging driver mailing list in two series. The first covered the <code>OnAuthClient()</code> overflow and the <code>HT_caps_handler()</code> and <code>OnAssocRsp()</code> OOB issues. The second (v2) reworked the frame length checks in <code>OnAuthClient()</code> following Dan Carpenter's review.</p>
+          <p>The changes are all in <code>drivers/staging/rtl8723bs/</code>:</p>
+          <ul>
+            <li><code>core/rtw_mlme_ext.c</code> — <code>OnAuthClient()</code>: IE length check + frame length guards</li>
+            <li><code>core/rtw_wlan_util.c</code> — <code>HT_caps_handler()</code>: IE length guard</li>
+            <li><code>core/rtw_mlme_ext.c</code> — <code>OnAssocRsp()</code>: IE loop header and data bounds checks</li>
+          </ul>
+          <div class="note">
+            All of these bugs have been in the driver since the initial staging commit in 2015. The driver is still in staging as of the current kernel, so it ships in any distribution that includes the staging tree. Any device using this chip that connects to untrusted WiFi networks is exposed — the auth algorithm toggle means there is no configuration that avoids the overflow path.
+          </div>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>file/libmagic — OOB Read in ELF Core Note Parser</title>
+    <meta name="description" content="Missing bounds check in file/libmagic readelf.c do_core_note() FreeBSD NT_PRPSINFO path: doff + argoff access without verifying the offset is within the buffer">
+    <meta property="og:title" content="file/libmagic — OOB Read in ELF Core Note Parser" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>file/libmagic — OOB Read in ELF Core Note Parser</h1>
+          <p class="post-subtitle">
+            A missing bounds check in <code>file</code>'s ELF core note parser. When processing a FreeBSD-style <code>NT_PRPSINFO</code> note, the code reads the process name field without first verifying that the field's offset falls within the note's data buffer. A crafted ELF core file with a small <code>NT_PRPSINFO</code> descriptor triggers an out-of-bounds read.
+          </p>
+          <p class="post-meta">
+            <span>Vulnerability Research</span>
+            <span>file / libmagic</span>
+            <span>by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">C</span>
+            <span class="tag">OOB Read</span>
+            <span class="tag">ELF</span>
+            <span class="tag">libmagic</span>
+            <span class="tag">Core Dump</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#context">1. Context</a></li>
+            <li><a href="#nt-prpsinfo">2. NT_PRPSINFO and the FreeBSD layout</a></li>
+            <li><a href="#bug">3. The missing check</a></li>
+            <li><a href="#trigger">4. Triggering it</a></li>
+            <li><a href="#fix">5. Fix — commit 6bb1b445</a></li>
+          </ul>
+        </nav>
+
+        <section id="context">
+          <h2>1. Context</h2>
+          <p><code>file(1)</code> and <code>libmagic</code> parse ELF core files to extract identifying information — the process name, PID, and signal. The relevant code is in <code>src/readelf.c</code>, in the <code>do_core_note()</code> function. I audited this file while looking at how <code>file</code> handles the note section of ELF files, specifically the paths that deal with different OS-specific note formats.</p>
+        </section>
+
+        <section id="nt-prpsinfo">
+          <h2>2. NT_PRPSINFO and the FreeBSD layout</h2>
+          <p><code>NT_PRPSINFO</code> is an ELF note type that stores process information in a core dump. The in-memory layout differs between OS families. In the FreeBSD variant, the process name (a null-terminated string, up to 80 characters) sits at a fixed offset from the start of the note descriptor, with the offset depending on whether the core is 32-bit or 64-bit:</p>
+          <pre><code>if (clazz == ELFCLASS32)
+    argoff = 4 + 4 + 17;       /* = 25 */
+else
+    argoff = 4 + 4 + 8 + 17;   /* = 33 */</code></pre>
+          <p>The code then reads the process name directly:</p>
+          <pre><code>if (elf_printf(ms, ", from '%.80s'", nbuf + doff + argoff) == -1)
+    return -1;</code></pre>
+        </section>
+
+        <section id="bug">
+          <h2>3. The missing check</h2>
+          <p>The read at <code>nbuf + doff + argoff</code> happens before any check that <code>doff + argoff + 81</code> (the maximum number of bytes the <code>%.80s</code> format could read, plus the null terminator scan) is within the bounds of the note's data buffer. The note descriptor is attacker-controlled: a crafted ELF core file can set <code>descsz</code> to a small value while still providing a valid-looking <code>NT_PRPSINFO</code> note type, making <code>doff + argoff</code> point past the end of the allocated buffer.</p>
+          <p>There is a size check one line later for the PID field:</p>
+          <pre><code>pidoff = argoff + 81 + 2;
+if (doff + pidoff + 4 <= size) {
+    /* read PID */
+}</code></pre>
+          <p>So the PID access is guarded, but the process name access immediately before it is not.</p>
+        </section>
+
+        <section id="trigger">
+          <h2>4. Triggering it</h2>
+          <p>A minimal ELF core file with a <code>PT_NOTE</code> segment containing an <code>NT_PRPSINFO</code> note and a <code>descsz</code> smaller than <code>argoff + 81</code> is enough. When <code>file crafted.core</code> runs, <code>do_core_note()</code> enters the <code>OS_STYLE_FREEBSD</code> branch, computes <code>argoff</code>, and calls <code>elf_printf</code> with a pointer past the note's data. Depending on what follows in memory, this reads whatever happens to be there — adjacent heap data or mapped pages — until a null byte is found.</p>
+        </section>
+
+        <section id="fix">
+          <h2>5. Fix — commit 6bb1b445</h2>
+          <p>Christos Zoulas committed the fix in commit <code>6bb1b445</code> with the message "Add missing bounds check (Alexandru Hossu)". The change adds the missing guard before the process name read:</p>
+          <pre><code>+if (doff + argoff + 81 <= size) {
+     if (elf_printf(ms, ", from '%.80s'", nbuf + doff + argoff) == -1)
+         return -1;
++}</code></pre>
+          <div class="note">
+            The fix mirrors the pattern already used for the PID field a few lines below — the same kind of bounds check was already present for the adjacent access, just not for this one.
+          </div>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>
