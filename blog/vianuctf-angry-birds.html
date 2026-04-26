@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>Angry Birds (VianuCTF 2025) — Android HMAC Score Forgery</title>
+    <meta name="description" content="Writeup for Angry Birds (VianuCTF 2025) — xdelta-patched APK, JADX decompilation, hardcoded HMAC secret, score forgery to get the flag">
+    <meta property="og:title" content="Angry Birds (VianuCTF 2025) — Android HMAC Score Forgery" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>Angry Birds (VianuCTF 2025) — Android HMAC Score Forgery</h1>
+          <p class="post-subtitle">
+            A patched Angry Birds APK with a hidden score-submission server. The description says
+            "huge, huge score" — turns out that's the entire hint. Reverse the HMAC secret from
+            the decompiled code, forge a 10<sup>9</sup> score, get the flag.
+          </p>
+          <p class="post-meta">
+            <span>Android • Reverse Engineering • Cryptography</span>
+            <span>VianuCTF 2025</span>
+            <span>Challenge by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Android</span>
+            <span class="tag">JADX</span>
+            <span class="tag">HMAC-SHA256</span>
+            <span class="tag">Frida</span>
+            <span class="tag">xdelta</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#setup">1. Getting the patched APK</a></li>
+            <li><a href="#decompile">2. Decompiling with JADX</a></li>
+            <li><a href="#service">3. Finding GoogleConnectService</a></li>
+            <li><a href="#hmac">4. The HMAC scheme</a></li>
+            <li><a href="#exploit">5. Forging the score — Python path</a></li>
+            <li><a href="#frida">6. Alternative: Frida path</a></li>
+          </ul>
+        </nav>
+
+        <section id="setup">
+          <h2>1. Getting the patched APK</h2>
+          <p>The challenge provides an <code>angrybirds_ctf.xdelta</code> patch file, not the APK itself. The description says the patch applies to Angry Birds Classic — so the first step is tracking down the original <code>Angry Birds Classic 7.9.3</code> APK and applying the patch:</p>
+          <pre><code>xdelta3 -d -s AngryBirdsClassic_7.9.3.apk angrybirds_ctf.xdelta angrybirds_patched.apk</code></pre>
+          <p>The result is a functional APK that installs and runs exactly like the original — no obvious sign anything was changed. That's intentional.</p>
+        </section>
+
+        <section id="decompile">
+          <h2>2. Decompiling with JADX</h2>
+          <p>I ran JADX on the patched APK to get readable Java source:</p>
+          <pre><code>jadx -d angrybirds_jadx angrybirds_patched.apk</code></pre>
+          <p>Most of the code is the standard Angry Birds codebase. I filtered for classes that weren't in the original — and <code>GoogleConnectService</code> stood out immediately. It's not a real Google service; the name is chosen to blend in.</p>
+        </section>
+
+        <section id="service">
+          <h2>3. Finding GoogleConnectService</h2>
+          <p><code>GoogleConnectService.java</code> is the only class added by the patch. It has one relevant method: <code>syncScore(String score)</code>. The call site is in the Facebook share-score flow — whenever the user taps "Share Score", the app calls <code>syncScore</code> with the current score before doing anything else.</p>
+          <p>The method builds a JSON POST and sends it to a hardcoded endpoint:</p>
+          <pre><code>http://185.213.240.231:54321/submit_score</code></pre>
+          <p>The request has three fields: <code>user</code>, <code>score</code>, and <code>sig</code>. The server validates the signature before responding with anything useful.</p>
+          <p>The signing key is hardcoded in the same class:</p>
+          <pre><code>private static final String SECRET = "super_secret_key_ctf";</code></pre>
+        </section>
+
+        <section id="hmac">
+          <h2>4. The HMAC scheme</h2>
+          <p>The signature is computed as HMAC-SHA256 over the string <code>"user:score"</code>, keyed with the hardcoded secret:</p>
+          <pre><code>message  = user + ":" + score
+signature = HMAC-SHA256(key="super_secret_key_ctf", msg=message)</code></pre>
+          <p>The server reconstructs the same signature from the received <code>user</code> and <code>score</code> fields and compares. If the HMAC matches and the score is high enough, it responds with the flag.</p>
+          <p>The description hint ("huge, huge score") points directly at the threshold — a score of 1,000,000,000 is what triggers the flag response.</p>
+        </section>
+
+        <section id="exploit">
+          <h2>5. Forging the score — Python path</h2>
+          <p>With the secret known, generating a valid signature is straightforward:</p>
+          <pre><code>import hmac
+import hashlib
+import requests
+import json
+
+SECRET = "super_secret_key_ctf"
+URL    = "http://185.213.240.231:54321/submit_score"
+
+user  = "player"
+score = 1000000000
+
+message   = f"{user}:{score}"
+signature = hmac.new(
+    SECRET.encode(),
+    message.encode(),
+    hashlib.sha256
+).hexdigest()
+
+payload = {"user": user, "score": score, "sig": signature}
+r = requests.post(URL, headers={"Content-Type": "application/json"}, data=json.dumps(payload))
+print(r.text)</code></pre>
+          <p>The server responds with the flag.</p>
+        </section>
+
+        <section id="frida">
+          <h2>6. Alternative: Frida path</h2>
+          <p>If the goal is to go through the app rather than forge the request directly, two hooks are needed: one to replace the score with 1 billion before it's sent, and one to read the server response before the app discards it.</p>
+          <pre><code>Java.perform(function() {
+    // Replace score with 1 billion before submission
+    let GoogleConnect = Java.use("com.googleconnect.GoogleConnectService");
+    GoogleConnect.syncScore.implementation = function(score) {
+        this.syncScore("1000000000");
+    };
+
+    // Intercept the HTTP response to read the flag
+    let HttpURLConnection = Java.use("java.net.HttpURLConnection");
+    HttpURLConnection.getInputStream.implementation = function() {
+        let stream = this.getInputStream();
+        let Scanner = Java.use("java.util.Scanner");
+        let response = Scanner.$new(stream).useDelimiter("\\A").next();
+        console.log("[flag] " + response);
+        let ByteArrayInputStream = Java.use("java.io.ByteArrayInputStream");
+        return ByteArrayInputStream.$new(response.getBytes());
+    };
+});</code></pre>
+          <div class="note">
+            The <code>setTimeout</code> delay is necessary — <code>GoogleConnectService</code> is loaded after the main activity initializes. The hook needs to be in place before the user taps "Share Score", so 3 seconds is enough time in practice.
+          </div>
+          <p>The Python approach is cleaner and doesn't require a rooted device or Frida setup. Either way, the core is the same: the secret is in the decompiled source, the signing scheme is directly reversible, and the score threshold is in the challenge description.</p>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>
