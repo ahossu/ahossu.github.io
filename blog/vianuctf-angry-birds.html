@@ -246,12 +246,6 @@ print(r.text)</code></pre>
           <h2>6. Alternative: Frida path</h2>
           <p>If the goal is to go through the app rather than forge the request directly, two hooks are needed: one to replace the score with 1 billion before it's sent, and one to read the server response before the app discards it.</p>
           <pre><code>Java.perform(function() {
-    // Replace score with 1 billion before submission
-    let GoogleConnect = Java.use("com.googleconnect.GoogleConnectService");
-    GoogleConnect.syncScore.implementation = function(score) {
-        this.syncScore("1000000000");
-    };
-
     // Intercept the HTTP response to read the flag
     let HttpURLConnection = Java.use("java.net.HttpURLConnection");
     HttpURLConnection.getInputStream.implementation = function() {
@@ -262,6 +256,14 @@ print(r.text)</code></pre>
         let ByteArrayInputStream = Java.use("java.io.ByteArrayInputStream");
         return ByteArrayInputStream.$new(response.getBytes());
     };
+
+    // GoogleConnectService loads after the main activity — wait before hooking
+    setTimeout(function() {
+        let GoogleConnect = Java.use("com.googleconnect.GoogleConnectService");
+        GoogleConnect.syncScore.implementation = function(score) {
+            this.syncScore("1000000000");
+        };
+    }, 3000);
 });</code></pre>
           <div class="note">
             The <code>setTimeout</code> delay is necessary — <code>GoogleConnectService</code> is loaded after the main activity initializes. The hook needs to be in place before the user taps "Share Score", so 3 seconds is enough time in practice.

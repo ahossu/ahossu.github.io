@@ -204,7 +204,7 @@ cur = con.cursor()
 cur.execute("SELECT id, created_at FROM notes ORDER BY id DESC LIMIT 5")
 print(cur.fetchall())</code></pre>
           <p>I got a few dummy notes — no flag. That's by design.</p>
-          <p>SQLite's WAL mode works by appending new page images to the WAL file instead of writing them directly to the database. A <em>commit boundary</em> is a WAL frame where <code>db_size != 0</code>. Any frames <em>after</em> the last commit boundary are uncommitted — SQLite's normal read path ignores them entirely. The flag note is sitting in one of those uncommitted frames. Opening the DB normally also risks triggering a checkpoint, which could destroy the WAL. So I went raw.</p>
+          <p>SQLite's WAL mode works by appending new page images to the WAL file instead of writing them directly to the database. A <em>commit boundary</em> is a WAL frame where <code>db_size != 0</code>. Any frames <em>after</em> the last commit boundary are uncommitted — SQLite's normal read path ignores them entirely. The flag note is sitting in one of those uncommitted frames. Opening the DB normally also risks triggering a checkpoint, which could destroy the WAL. So I parsed the WAL directly as raw bytes.</p>
         </section>
 
         <section id="prefs">
@@ -259,7 +259,7 @@ Frame body: page_size bytes (usually 4096)</code></pre>
 
         <section id="decrypt">
           <h2>7. AES-GCM + MessagePack decode</h2>
-          <p>Each note's payload is a blob structured as <code>ciphertext || tag (16 bytes)</code>. The nonce is derived deterministically from the note's <code>created_at</code> timestamp (milliseconds):</p>
+          <p>Each note's payload is a blob structured as <code>ciphertext || tag (16 bytes)</code>. The nonce is derived deterministically from the note's <code>created_at</code> timestamp (milliseconds) — this is the challenge-specific scheme reversed from <code>libnative.so</code>: the timestamp is packed as a little-endian 8-byte integer, zero-padded to 16 bytes, then SHA256-hashed with a fixed prefix and truncated to 12 bytes for AES-GCM:</p>
           <pre><code>import hashlib
 
 def nonce_from_ts(ts: int) -> bytes:

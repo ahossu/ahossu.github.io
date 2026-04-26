@@ -182,7 +182,7 @@
         <section id="stage1">
           <h2>Stage 1 — dispatch code → session token (FLAG 1)</h2>
           <p>The first screen asks for a "dispatch code". Type the wrong thing and you get <em>Invalid dispatch code. Contact dispatch.</em> — generic, no hints at all. The validation logic is in a heavily obfuscated Kotlin function that applies a series of deterministic transforms: normalization, reversal, XOR with a lookup table, and a checksum comparison against a hardcoded digest.</p>
-          <p>There's no plain hash to reverse-lookup. I traced through the transform chain statically and worked backwards to find an input that produces the expected digest. Alternatively, intercepting the validation function with Frida and brute-forcing the PIN space is also viable — it's small enough that it runs fast.</p>
+          <p>There's no plain hash to reverse-lookup. I traced through the transform chain statically and worked backwards to find an input that produces the expected digest. Alternatively, intercepting the validation function with Frida and brute-forcing the PIN space works too — it's small enough that it completes in seconds.</p>
           <p>Once I had the right dispatch code, the session still wasn't just a flag sitting in plaintext. The code is used as a KDF input to decrypt <code>blob1</code> — a byte array embedded in the APK. Out comes a session token, which is FLAG 1, and which also gets stored in <code>EncryptedSharedPreferences</code> as the live session credential.</p>
           <div class="note">
             Everything downstream requires a valid session. The app checks for it on every screen and rejects you silently if it's missing or expired — so there's no way to skip this stage.
