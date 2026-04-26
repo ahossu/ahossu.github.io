@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>RAM Vault Beacon — Linux Malware Forensics Writeup</title>
+    <meta name="description" content="Writeup for RAM Vault Beacon — Linux malware combining PCAP analysis, memory forensics, SHA256 key derivation, and XChaCha20-Poly1305 decryption">
+    <meta property="og:title" content="RAM Vault Beacon — Linux Malware Forensics Writeup" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>RAM Vault Beacon — Linux Malware Forensics</h1>
+          <p class="post-subtitle">
+            A Linux malware sample forks into an anti-analysis tree, stores an encrypted flag in an anonymous <code>mmap</code> region, and beacons its C2 over DNS + HTTP.
+            Recovering the flag took three artifacts: a PCAP, a memory dump, and the machine's <code>/etc/machine-id</code> — miss any one of them and the key derivation fails silently.
+          </p>
+          <p class="post-meta">
+            <span>Forensics / Malware Analysis</span>
+            <span>UNBR Quals 2026</span>
+            <span>Challenge by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Linux</span>
+            <span class="tag">Memory Forensics</span>
+            <span class="tag">PCAP</span>
+            <span class="tag">XChaCha20-Poly1305</span>
+            <span class="tag">SHA256</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#overview">1. Malware overview</a></li>
+            <li><a href="#pcap">2. PCAP: extracting ts_window and dns_last_ip</a></li>
+            <li><a href="#memdump">3. Memory dump: vault mapping and env vars</a></li>
+            <li><a href="#vault">4. Vault structure</a></li>
+            <li><a href="#kdf">5. Key derivation chain</a></li>
+            <li><a href="#decrypt">6. Decrypting the vault</a></li>
+          </ul>
+        </nav>
+
+        <section id="overview">
+          <h2>1. Malware overview</h2>
+          <p>The binary forks into a tree immediately after launch:</p>
+          <pre><code>main
+├── fork 1.1  anti-analysis
+│   ├── fork 1.1.1  process scanner + debugger check
+│   │   scans /proc/*/comm for gdb, strace, ltrace, wireshark …
+│   │   reads TracerPid from /proc/self/status
+│   │   renames itself with PR_SET_NAME to a benign name
+│   └── fork 1.1.2  env vars setup
+│       exports TASK_ID, KDF_SALT, STAGE_ARGS_B64
+└── fork 1.2  persistence + vault + C2
+    ├── fork 1.2.1  creates the RAM vault
+    │   mmap(0x800000, PROT_RW, MAP_ANON|MAP_PRIVATE)
+    │   encrypts flag_bytes → stores ciphertext in the mapping
+    │   zeroizes plaintext immediately after
+    └── fork 1.2.2  C2 beacon
+        ├── fork 1.2.2.1  DNS beacon (3 A-record queries)
+        └── fork 1.2.2.2  HTTP POST to /beacon</code></pre>
+          <p>The flag material never appears in plaintext anywhere on disk or in the network traffic. You need all three artifacts to reconstruct the decryption key — which is exactly why the challenge gives you a PCAP, a memory dump, and a disk image separately.</p>
+        </section>
+
+        <section id="pcap">
+          <h2>2. PCAP: extracting ts_window and dns_last_ip</h2>
+          <p>The HTTP POST to <code>/beacon</code> contains a <code>ts</code> field — a windowed Unix timestamp:</p>
+          <pre><code>ts_window = floor(epoch_seconds / 600) * 600</code></pre>
+          <p>I read it directly from the POST body. Wireshark works fine for this, or <code>tshark</code> if you prefer the command line.</p>
+          <p>The DNS beacon fires three A-record queries right at startup. The IP from the <em>last</em> DNS response is used in the HMAC proof (<code>dns_last_ip</code>). I pulled the final A response from the PCAP — it's 4 bytes in big-endian order.</p>
+        </section>
+
+        <section id="memdump">
+          <h2>3. Memory dump: vault mapping and env vars</h2>
+          <p>From the memory dump I needed three env vars from the malware process's <code>/proc/PID/environ</code> region, plus the vault mapping itself.</p>
+          <p>The env vars to extract:</p>
+          <ul>
+            <li><code>TASK_ID</code> — a UUID string</li>
+            <li><code>KDF_SALT</code> — 32 hex chars (16 bytes)</li>
+            <li><code>STAGE_ARGS_B64</code> — base64-encoded argv blob</li>
+          </ul>
+          <p>The vault is an 8 MiB anonymous private mapping (<code>rw-p</code>, no file backing, size exactly <code>0x800000</code>). In Volatility you can scan for it in the process's memory map. In a raw dump, look for the vault magic: the 20-byte header starts with version <code>03 00 00 00</code> in little-endian. I also pulled <code>/etc/machine-id</code> from the disk image — it feeds directly into key derivation.</p>
+        </section>
+
+        <section id="vault">
+          <h2>4. Vault structure</h2>
+          <p>The first 20 bytes of the 8 MiB mapping are the header, all little-endian u32:</p>
+          <pre><code>struct vault_header {
+    u32 version;   // = 3
+    u32 nonce_len; // = 24
+    u32 pt_len;    // = 32
+    u32 ct_len;    // = 48  (32 plaintext + 16 AEAD tag)
+    u32 crc32_ct;  // CRC32 of the ciphertext bytes
+};</code></pre>
+          <p>Immediately after the header: 24 bytes of random nonce, then 48 bytes of ciphertext (32 bytes payload + 16-byte Poly1305 tag).</p>
+          <p>I verified <code>crc32_ct</code> against the ciphertext before attempting decryption — if it doesn't match, you're looking at the wrong mapping. The flag is <em>not</em> stored as a readable string: <code>flag_bytes</code> is 32 raw bytes of CSPRNG output, presented as <code>FLAG{hex(flag_bytes)}</code> — 64 hex characters.</p>
+        </section>
+
+        <section id="kdf">
+          <h2>5. Key derivation chain</h2>
+          <p>Everything uses plain SHA256. No HKDF, no fancy KDF — just chained hashes, which is actually kind of nice to work with:</p>
+          <pre><code>import hashlib, struct
+
+machine_id = open("/etc/machine-id").read().strip().encode()
+task_id    = b"&lt;TASK_ID from env&gt;"
+kdf_salt   = bytes.fromhex("&lt;KDF_SALT from env&gt;")
+stage_args = b"&lt;STAGE_ARGS_B64 from env&gt;"
+ts_window  = &lt;int from PCAP&gt;
+
+# 1. args_hash
+args_hash = hashlib.sha256(stage_args).digest()
+
+# 2. ts_window as 8-byte little-endian
+ts_le8 = struct.pack("&lt;Q", ts_window)
+
+# 3. ikm = SHA256(machine_id || TASK_ID || ts_le8 || args_hash)
+ikm = hashlib.sha256(machine_id + task_id + ts_le8 + args_hash).digest()
+
+# 4. key = SHA256(KDF_SALT || ikm || b"rocsc/vault")
+key = hashlib.sha256(kdf_salt + ikm + b"rocsc/vault").digest()</code></pre>
+        </section>
+
+        <section id="decrypt">
+          <h2>6. Decrypting the vault</h2>
+          <p>The AEAD algorithm is XChaCha20-Poly1305 (libsodium's <code>crypto_aead_xchacha20poly1305_ietf</code>). The AAD is <code>SHA256(machine_id || TASK_ID)</code>:</p>
+          <pre><code>from nacl.secret import Aead  # pynacl
+
+aad = hashlib.sha256(machine_id + task_id).digest()
+
+# vault bytes: header (20) + nonce (24) + ciphertext (48)
+nonce      = vault_bytes[20:44]
+ciphertext = vault_bytes[44:92]
+
+box = Aead(key)  # XChaCha20-Poly1305
+flag_bytes = box.decrypt(ciphertext, aad=aad, nonce=nonce)
+
+print("FLAG{" + flag_bytes.hex() + "}")</code></pre>
+          <div class="note">
+            pynacl's <code>Aead</code> class uses XChaCha20-Poly1305 by default with a 24-byte nonce, which matches exactly. Alternatively, use libsodium directly via ctypes or cffi.
+          </div>
+          <p>The crypto itself was the easy part. What took time was tracking down all the pieces: <code>ts_window</code> from the PCAP, three env vars buried in the memory dump, and <code>machine-id</code> from disk. The challenge is really a multi-artifact forensics puzzle dressed up as malware analysis.</p>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

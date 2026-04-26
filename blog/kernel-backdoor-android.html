@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>KernelBackdoor — Android + Linux Kernel Module Writeup</title>
+    <meta name="description" content="Writeup for KernelBackdoor — Android APK hiding a kernel module, ioctl reverse, token XOR from libnative.so">
+    <meta property="og:title" content="KernelBackdoor — Android + Linux Kernel Module Writeup" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>KernelBackdoor — Android APK with a Hidden Kernel Module</h1>
+          <p class="post-subtitle">
+            An Android app that looks completely harmless ships a Linux kernel module in its <code>assets/</code> folder.
+            I had to notice it, load it manually, reverse the XOR token from native code, and hit a single <code>ioctl</code> to get the flag back.
+          </p>
+          <p class="post-meta">
+            <span>Android • Reverse Engineering • Linux Kernel</span>
+            <span>CyberEdu UNBR 2026</span>
+            <span>Challenge by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Android</span>
+            <span class="tag">Linux Kernel</span>
+            <span class="tag">ioctl</span>
+            <span class="tag">AES</span>
+            <span class="tag">Reverse Engineering</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#initial">1. Initial recon</a></li>
+            <li><a href="#module">2. Analyzing module.ko</a></li>
+            <li><a href="#native">3. Extracting the token from libnative.so</a></li>
+            <li><a href="#load">4. Loading the module and getting /dev/ctf</a></li>
+            <li><a href="#exploit">5. Writing the exploit</a></li>
+            <li><a href="#frida">6. Alternative: Frida approach</a></li>
+          </ul>
+        </nav>
+
+        <section id="initial">
+          <h2>1. Initial recon</h2>
+          <p>The challenge gives you <code>SystemInfo.apk</code>, a <code>bzImage</code>, and a short README saying it runs on an Android 12 x86_64 emulator. The app UI shows mundane system info — model, battery, storage. Nothing obviously suspicious.</p>
+          <p>I unzipped the APK and the interesting stuff showed up immediately:</p>
+          <pre><code>unzip SystemInfo.apk -d app_unpacked
+ls app_unpacked/assets/
+# → module.ko
+
+ls app_unpacked/lib/x86_64/
+# → libnative.so</code></pre>
+          <p>A kernel module shipped inside an Android app. That's the whole challenge in one observation — everything else follows from there.</p>
+        </section>
+
+        <section id="module">
+          <h2>2. Analyzing module.ko</h2>
+          <p>I loaded it in Ghidra and looked for the init function. There's a char device registration for <code>/dev/ctf</code> and a single <code>unlocked_ioctl</code> handler.</p>
+          <p>The ioctl handler checks for command <code>0x1337</code> and does:</p>
+          <ol>
+            <li><code>copy_from_user(buf, userptr, 16)</code> — reads a 16-byte token from userspace</li>
+            <li>AES decrypt the stored ciphertext using the token as the key (<code>aes_expandkey</code> + <code>aes_decrypt</code>)</li>
+            <li><code>copy_to_user(userptr, plaintext, len)</code> — writes the flag back into the same buffer</li>
+          </ol>
+          <p>So the flow is: send token → get flag. No need to break AES — just recover the right 16-byte key from the native library.</p>
+        </section>
+
+        <section id="native">
+          <h2>3. Extracting the token from libnative.so</h2>
+          <p><code>strings</code> didn't give me the token directly. In Ghidra, I found the function that does the <code>ioctl</code> call — it's reachable from the JNI method <code>BackdoorService_triggerBackdoor</code>.</p>
+          <p>Inside I found two static 8-byte arrays and a single XOR key byte <code>0x42</code>. The token is assembled like this:</p>
+          <pre><code>for (int i = 0; i &lt; 8; i++) {
+    token[i]   = part1[i] ^ 0x42;
+    token[8+i] = part2[i] ^ 0x42;
+}</code></pre>
+          <p>I did the XOR manually on the byte arrays from <code>.rodata</code> and got the 16-byte token:</p>
+          <pre><code>b9 27 6f 31 ce f4 47 ac 7f f3 1b e9 74 c5 93 f8</code></pre>
+        </section>
+
+        <section id="load">
+          <h2>4. Loading the module and getting /dev/ctf</h2>
+          <p>The app doesn't actually load the module itself in the final version — you have to do it manually. I extracted the module from the APK and pushed it to the emulator:</p>
+          <pre><code>adb push module.ko /data/local/tmp/
+adb shell "su 0 insmod /data/local/tmp/module.ko"
+adb shell ls -l /dev/ctf
+# crw-rw-rw- ...
+
+# if permissions are too tight:
+adb shell "su 0 chmod 666 /dev/ctf"</code></pre>
+        </section>
+
+        <section id="exploit">
+          <h2>5. Writing the exploit</h2>
+          <p>I compiled a small C program for Android x86_64 using the NDK, pushed it, and ran it:</p>
+          <pre><code>#include &lt;stdio.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;sys/ioctl.h&gt;
+#include &lt;string.h&gt;
+
+#define IOCTL_CMD 0x1337
+
+int main(void) {
+    unsigned char buf[80] = {
+        0xb9, 0x27, 0x6f, 0x31, 0xce, 0xf4, 0x47, 0xac,
+        0x7f, 0xf3, 0x1b, 0xe9, 0x74, 0xc5, 0x93, 0xf8
+    };
+
+    int fd = open("/dev/ctf", O_RDWR);
+    if (fd &lt; 0) { perror("open"); return 1; }
+
+    if (ioctl(fd, IOCTL_CMD, buf) &lt; 0) { perror("ioctl"); return 1; }
+
+    printf("%s\n", buf);
+    close(fd);
+    return 0;
+}</code></pre>
+          <pre><code>$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang \
+  -O2 -o exploit exploit.c
+
+adb push exploit /data/local/tmp/
+adb shell chmod 755 /data/local/tmp/exploit
+adb shell /data/local/tmp/exploit</code></pre>
+          <p>Output:</p>
+          <pre><code>CTF{...}</code></pre>
+          <div class="note">
+            The buffer needs to be at least 80 bytes — the flag is written back starting at offset 0, overwriting the token. 16 bytes is not enough.
+          </div>
+        </section>
+
+        <section id="frida">
+          <h2>6. Alternative: Frida approach</h2>
+          <p>The app has anti-Frida checks: it scans <code>/proc/self/maps</code> for Frida-related strings and checks port <code>27042</code>. If Frida is detected, the backdoor service exits silently — no crash, no error.</p>
+          <p>Bypass options: rename the Frida server binary, use a modified "undetected" build, or patch the APK smali to remove the checks. Once past that, hooking <code>ioctl</code> at <code>cmd == 0x1337</code> shows both the token (going in) and the flag (coming out):</p>
+          <pre><code>const ioctlPtr = Module.findExportByName(null, "ioctl");
+Interceptor.attach(ioctlPtr, {
+    onEnter(args) {
+        this.cmd = args[1].toInt32();
+        this.buf = args[2];
+    },
+    onLeave(retval) {
+        if (this.cmd === 0x1337)
+            console.log(this.buf.readUtf8String());
+    }
+});</code></pre>
+          <p>Either way, the key insight is the same: you're not breaking AES, just recovering the 16-byte key from native code and handing it to the kernel module through a perfectly normal ioctl. The static path through Ghidra was faster for me than fighting the Frida detection.</p>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

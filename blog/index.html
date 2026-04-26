@@ -190,7 +190,102 @@
 
         <section>
           <div class="posts-list">
-            <a class="post-card" href="hackthebox-arno.html">
+
+            <a class="post-card" href="osc-bankdroid">
+              <h2 class="post-title">BankDroid (OSC 2026) — Android Banking Trojan, 6 Flags</h2>
+              <p class="post-meta">
+                <span>Android • Malware • Reverse Engineering</span>
+                <span>OSC 2026</span>
+                <span>Challenge by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Android</span>
+                <span class="tag">Malware</span>
+                <span class="tag">DGA</span>
+                <span class="tag">Anti-Frida</span>
+                <span class="tag">AES-256-GCM</span>
+              </div>
+              <p class="post-excerpt">
+                APK hiding a full banking trojan: native seed XOR in <code>.init_array</code>, obfuscated DGA, anti-Frida guards, embedded VNC server, and a custom C2 handshake. Six flags, four stages.
+              </p>
+            </a>
+
+            <a class="post-card" href="osc-courier-drop">
+              <h2 class="post-title">CourierDrop (OSC 2026) — 4-Stage Android RE</h2>
+              <p class="post-meta">
+                <span>Android • Reverse Engineering</span>
+                <span>OSC 2026</span>
+                <span>Challenge by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Android</span>
+                <span class="tag">Native / JNI</span>
+                <span class="tag">Frida</span>
+                <span class="tag">HMAC</span>
+                <span class="tag">Anti-Debug</span>
+              </div>
+              <p class="post-excerpt">
+                Courier logistics app with four chained secrets: obfuscated dispatch code, JNI callback hiding the attestation, anti-debug bypass to unlock encrypted notes, and a local HMAC verifier for the final flag.
+              </p>
+            </a>
+
+            <a class="post-card" href="ram-vault-beacon">
+              <h2 class="post-title">RAM Vault Beacon (UNBR Quals 2026) — Linux Malware Forensics</h2>
+              <p class="post-meta">
+                <span>Forensics • Malware Analysis</span>
+                <span>UNBR Quals 2026</span>
+                <span>Challenge by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Linux</span>
+                <span class="tag">Memory Forensics</span>
+                <span class="tag">PCAP</span>
+                <span class="tag">XChaCha20-Poly1305</span>
+                <span class="tag">SHA256</span>
+              </div>
+              <p class="post-excerpt">
+                Linux malware forking into an anti-analysis tree, storing encrypted flag bytes in an anonymous <code>mmap</code> region. Combine PCAP, memory dump, and disk image to reconstruct the SHA256 key chain and decrypt.
+              </p>
+            </a>
+
+            <a class="post-card" href="kernel-backdoor-android">
+              <h2 class="post-title">KernelBackdoor (CyberEdu UNBR 2026) — Android + Hidden Kernel Module</h2>
+              <p class="post-meta">
+                <span>Android • Reverse Engineering • Linux Kernel</span>
+                <span>CyberEdu UNBR 2026</span>
+                <span>Challenge by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Android</span>
+                <span class="tag">Linux Kernel</span>
+                <span class="tag">ioctl</span>
+                <span class="tag">AES</span>
+              </div>
+              <p class="post-excerpt">
+                An Android APK shipping a <code>.ko</code> in <code>assets/</code>. Load the module manually, reverse the XOR token from <code>libnative.so</code>, and hit <code>ioctl(0x1337)</code> on <code>/dev/ctf</code> to get the flag back.
+              </p>
+            </a>
+
+            <a class="post-card" href="rocsc-secnotes">
+              <h2 class="post-title">In Search of the Lost Note (ROCSC 2026) — SQLite WAL Forensics</h2>
+              <p class="post-meta">
+                <span>Forensics • Android • Reverse Engineering</span>
+                <span>ROCSC 2026</span>
+                <span>Challenge by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">SQLite WAL</span>
+                <span class="tag">AES-GCM</span>
+                <span class="tag">PBKDF2</span>
+                <span class="tag">MessagePack</span>
+                <span class="tag">Android</span>
+              </div>
+              <p class="post-excerpt">
+                Flag hidden in an uncommitted WAL frame that normal SQLite won't show. Raw WAL parsing, native reverse engineering for the PBKDF2 pepper, then AES-GCM + MessagePack to pull it out.
+              </p>
+            </a>
+
+            <a class="post-card" href="hackthebox-arno">
               <h2 class="post-title">Arno (HackTheBox) — Android Unity IL2CPP</h2>
               <p class="post-meta">
                 <span>Android • Reverse Engineering</span>
@@ -207,6 +302,7 @@
                 Il2CppDumper, then AES-CBC decrypt in Python to recover the flag.
               </p>
             </a>
+
           </div>
         </section>
       </main>

@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>CourierDrop (OSC) — Android Multi-Stage RE Writeup</title>
+    <meta name="description" content="Writeup for CourierDrop (OSC) — 4-stage Android courier app: obfuscated dispatch code, native attestation via JNI callback, anti-debug bypass, and HMAC-based local verifier">
+    <meta property="og:title" content="CourierDrop (OSC) — Android Multi-Stage RE Writeup" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>CourierDrop (OSC) — 4-Stage Android RE</h1>
+          <p class="post-subtitle">
+            A courier logistics app with four layers of secrets: an obfuscated dispatch code, a JNI callback that hides its output, anti-debug guards protecting encrypted notes, and an HMAC-signed local HTTP verifier that hands out the final flag.
+          </p>
+          <p class="post-meta">
+            <span>Android • Reverse Engineering</span>
+            <span>OSC 2026</span>
+            <span>Challenge by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Android</span>
+            <span class="tag">Native / JNI</span>
+            <span class="tag">Frida</span>
+            <span class="tag">HMAC</span>
+            <span class="tag">Anti-Debug</span>
+            <span class="tag">PBKDF2</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#stage1">Stage 1 — dispatch code → session token (FLAG 1)</a></li>
+            <li><a href="#stage2">Stage 2 — native attestation via JNI callback (FLAG 2)</a></li>
+            <li><a href="#stage3">Stage 3 — anti-debug bypass + encrypted locker (FLAG 3)</a></li>
+            <li><a href="#stage4">Stage 4 — HMAC proof + local verifier (FLAG 4)</a></li>
+          </ul>
+        </nav>
+
+        <section id="stage1">
+          <h2>Stage 1 — dispatch code → session token (FLAG 1)</h2>
+          <p>The first screen asks for a "dispatch code". Type the wrong thing and you get <em>Invalid dispatch code. Contact dispatch.</em> — generic, no hints at all. The validation logic is in a heavily obfuscated Kotlin function that applies a series of deterministic transforms: normalization, reversal, XOR with a lookup table, and a checksum comparison against a hardcoded digest.</p>
+          <p>There's no plain hash you can reverse-lookup. I traced through the transform chain statically and worked backwards to find an input that produces the expected digest. You can also hook the validation function with Frida and brute-force the PIN space — it turns out to be small enough for that to be fast.</p>
+          <p>Once I had the right dispatch code, the session still wasn't just a flag sitting in plaintext. The code is used as a KDF input to decrypt <code>blob1</code> — a byte array embedded in the APK. Out comes a session token, which is FLAG 1, and which also gets stored in <code>EncryptedSharedPreferences</code> as the live session credential.</p>
+          <div class="note">
+            Everything downstream requires a valid session. The app checks for it on every screen and rejects you silently if it's missing or expired — so there's no way to skip this stage.
+          </div>
+        </section>
+
+        <section id="stage2">
+          <h2>Stage 2 — native attestation via JNI callback (FLAG 2)</h2>
+          <p>Stage 2 is the package scan flow. The UI shows a progress indicator — "Validating label…", "Checking chain-of-custody signature…", "Device attestation in progress…" — and then marks the stop as Verified. FLAG 2 never appears on screen, which was the first hint something interesting was happening under the surface.</p>
+          <p>What actually happens: the app calls into <code>libnative.so</code> with the session token from Stage 1. The native side derives a key from that token, decrypts <code>blob2</code> stored in <code>.rodata</code>, and produces an <em>attestation</em> string. That attestation is FLAG 2.</p>
+          <p>The catch — it's not returned as a return value. The native code calls back into Java via JNI: either <code>onScanSuccess(attestation)</code> on a callback interface, or directly into a repository class like <code>RouteRepository.saveAttestation(attestation)</code>. The UI just shows "Verified" and the flag disappears into memory.</p>
+          <p>Two good interception points with Frida:</p>
+          <ul>
+            <li>Hook the Java method that receives the callback — read the string argument directly</li>
+            <li>Hook <code>NewStringUTF</code> in the JNI bridge — every string the native side creates passes through here</li>
+          </ul>
+          <pre><code>Java.perform(() =&gt; {
+    // option 1: hook the Java callback
+    const RouteRepo = Java.use("com.courierdrop.RouteRepository");
+    RouteRepo.saveAttestation.implementation = function(att) {
+        console.log("[*] attestation:", att);
+        return this.saveAttestation(att);
+    };
+});</code></pre>
+        </section>
+
+        <section id="stage3">
+          <h2>Stage 3 — anti-debug bypass + encrypted locker (FLAG 3)</h2>
+          <p>The "Secure Notes / Locker" section contains sensitive delivery instructions for each stop. Before showing anything real, the app runs <code>Guard.check()</code>. If that returns bad news, you get sanitized placeholder notes — plausible-looking but completely useless.</p>
+          <p><code>Guard.check()</code> looks for:</p>
+          <ul>
+            <li><code>Debug.isDebuggerConnected()</code></li>
+            <li><code>TracerPid</code> in <code>/proc/self/status</code></li>
+            <li>Frida-related substrings in <code>/proc/self/maps</code></li>
+          </ul>
+          <p>I bypassed it by patching the smali. Decompile with apktool, find the branch that gates on the guard result, flip it, rebuild and sign. With the guard out of the way, <code>key3</code> is derived from the Stage 2 attestation (FLAG 2 feeds directly here), <code>blob3</code> is decrypted, and the locker receipt — FLAG 3 — shows up in the Diagnostics section.</p>
+          <p>If you'd rather not patch smali, hooking <code>Guard.check</code> at runtime to always return <code>false</code> works too — just make sure Frida itself doesn't trip the detection before you hook it.</p>
+        </section>
+
+        <section id="stage4">
+          <h2>Stage 4 — HMAC proof + local verifier (FLAG 4)</h2>
+          <p>The final screen is "Complete Delivery". Fill in the form fields and the app constructs a POD (proof of delivery) JSON payload, signs it, and sends it to a local HTTP server that the app spins up itself on a random <code>127.0.0.1</code> port.</p>
+          <p>The signing works like this:</p>
+          <pre><code>nonce = random 16 bytes
+canonical = nonce || sha256(payload_json)
+K = KDF(locker_receipt)   ← FLAG 3 feeds in here
+X-Nonce: base64(nonce)
+X-Proof: base64(HMAC-SHA256(K, canonical))</code></pre>
+          <p>The local verifier (<code>POST /verify</code>) reconstructs the canonical payload, recomputes the HMAC, compares, and — if everything matches — responds with a receipt JSON containing <code>audit_token</code>. That's FLAG 4.</p>
+          <p>Two ways to get there. The easy path: hook <code>OkHttp</code>'s network interceptor, capture the full request including headers, replay it to the local server port (find the port by hooking the server startup or reading it from Diagnostics). The more thorough path: reverse the key derivation from <code>locker_receipt</code>, build the canonical payload yourself, sign it, and send your own POST. I went with the second approach — more work, but more satisfying.</p>
+          <div class="note">
+            Each flag is derived from the previous one: dispatch code → session token → attestation → locker receipt → audit token. Break one link and everything after it stays locked. The chain is the whole point of the challenge.
+          </div>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

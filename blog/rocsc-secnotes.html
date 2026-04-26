@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>In Search of the Lost Note (ROCSC) — Writeup</title>
+    <meta name="description" content="Writeup for ROCSC SecNotes — SQLite WAL forensics, Android native reverse, AES-GCM + MessagePack">
+    <meta property="og:title" content="In Search of the Lost Note (ROCSC) — Writeup" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>In Search of the Lost Note — ROCSC SecNotes</h1>
+          <p class="post-subtitle">
+            An Android notes app with an encrypted SQLite database and a WAL file — and the flag sitting in an uncommitted WAL frame that normal SQLite quietly ignores.
+            Raw WAL parsing, a native reverse to get the pepper, then AES-GCM + MessagePack to pull it out.
+          </p>
+          <p class="post-meta">
+            <span>Forensics / Android / Reverse Engineering</span>
+            <span>ROCSC 2026</span>
+            <span>Challenge by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">SQLite WAL</span>
+            <span class="tag">AES-GCM</span>
+            <span class="tag">PBKDF2</span>
+            <span class="tag">MessagePack</span>
+            <span class="tag">Android</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#files">1. What you get</a></li>
+            <li><a href="#wal-pitfall">2. The SQLite pitfall</a></li>
+            <li><a href="#prefs">3. Extracting crypto params from shared_prefs</a></li>
+            <li><a href="#native">4. Reversing the pepper out of libnative.so</a></li>
+            <li><a href="#wal-parse">5. Parsing the WAL manually</a></li>
+            <li><a href="#btree">6. B-tree traversal to find the note</a></li>
+            <li><a href="#decrypt">7. AES-GCM + MessagePack decode</a></li>
+            <li><a href="#solve">8. Putting it all together</a></li>
+          </ul>
+        </nav>
+
+        <section id="files">
+          <h2>1. What you get</h2>
+          <p>Two files: <code>app.apk</code> and <code>case.zip</code> — a backup of the app's data directory.</p>
+          <p>Unzipping <code>case.zip</code> gives:</p>
+          <pre><code>case/
+  shared_prefs/security.xml   ← crypto parameters
+  databases/notes.db          ← SQLite database
+  databases/notes.db-shm      ← shared memory
+  databases/notes.db-wal      ← write-ahead log</code></pre>
+          <p>The goal is to recover a note that isn't visible through normal SQL queries — because it was written to the WAL but never committed.</p>
+        </section>
+
+        <section id="wal-pitfall">
+          <h2>2. The SQLite pitfall</h2>
+          <p>First instinct: open <code>notes.db</code> with Python and run a SELECT.</p>
+          <pre><code>import sqlite3
+con = sqlite3.connect("case/databases/notes.db")
+cur = con.cursor()
+cur.execute("SELECT id, created_at FROM notes ORDER BY id DESC LIMIT 5")
+print(cur.fetchall())</code></pre>
+          <p>I got a few dummy notes — no flag. That's by design.</p>
+          <p>SQLite's WAL mode works by appending new page images to the WAL file instead of writing them directly to the database. A <em>commit boundary</em> is a WAL frame where <code>db_size != 0</code>. Any frames <em>after</em> the last commit boundary are uncommitted — SQLite's normal read path ignores them entirely. The flag note is sitting in one of those uncommitted frames. Opening the DB normally also risks triggering a checkpoint, which could destroy the WAL. So I went raw.</p>
+        </section>
+
+        <section id="prefs">
+          <h2>3. Extracting crypto params from shared_prefs</h2>
+          <p><code>shared_prefs/security.xml</code> had everything needed for key derivation:</p>
+          <pre><code>&lt;string name="salt_b64"&gt;base64-encoded-salt&lt;/string&gt;
+&lt;int name="pbkdf2_iter" value="100000" /&gt;
+&lt;int name="dk_len" value="32" /&gt;</code></pre>
+          <p>The key is derived with PBKDF2-HMAC-SHA256, but not just from the PIN. The password is <code>"{PIN}:{pepper}"</code>, where the pepper is buried in native code. So I had to dig into the <code>.so</code> next.</p>
+        </section>
+
+        <section id="native">
+          <h2>4. Reversing the pepper out of libnative.so</h2>
+          <p>I extracted the APK and pulled the native library:</p>
+          <pre><code>unzip -q app.apk -d _apk
+# libnative.so lives under lib/&lt;arch&gt;/</code></pre>
+          <p>A quick <code>strings</code> pass didn't reveal the pepper in plain text — expected. I opened it in Ghidra and looked for strings containing a <code>::</code> separator. The pepper follows a scheme like <code>v2::rocsc-…</code> and it was sitting there once I knew what to search for.</p>
+          <p>With the pepper in hand, key derivation was straightforward:</p>
+          <pre><code>import hashlib, base64
+
+salt = base64.b64decode(salt_b64)
+password = f"{PIN}:{pepper}".encode()
+key = hashlib.pbkdf2_hmac("sha256", password, salt, iters, dklen)</code></pre>
+        </section>
+
+        <section id="wal-parse">
+          <h2>5. Parsing the WAL manually</h2>
+          <p>The WAL format is straightforward once you look it up: a 32-byte header, then a sequence of frames. Each frame is a 24-byte header followed by a full page image (typically 4096 bytes).</p>
+          <p>I split frames into <em>committed</em> (at or before the last frame with <code>db_size != 0</code>) and <em>uncommitted</em> (everything after), then built an overlay map: <code>page_number → page_bytes</code>, with uncommitted pages layered on top.</p>
+          <pre><code>WAL header: 32 bytes
+Frame header: 24 bytes
+  pgno    (4 bytes) — which database page this image replaces
+  db_size (4 bytes) — non-zero marks a commit boundary
+  ...
+Frame body: page_size bytes (usually 4096)</code></pre>
+        </section>
+
+        <section id="btree">
+          <h2>6. B-tree traversal to find the note</h2>
+          <p>SQLite stores all tables as B-trees. To read the <code>notes</code> table from my custom overlay, I needed to:</p>
+          <ol>
+            <li>Parse page 1 (<code>sqlite_master</code>) to find the <code>notes</code> table's root page number.</li>
+            <li>Traverse the B-tree from that root, using the overlay instead of the raw DB file.</li>
+          </ol>
+          <p>The two page types that matter:</p>
+          <ul>
+            <li><code>0x05</code> — interior table page (child page pointers)</li>
+            <li><code>0x0D</code> — leaf table page (actual records)</li>
+          </ul>
+          <p>For each leaf cell I read the payload size and row ID as SQLite varints, then parsed the record. Records that only appeared in the uncommitted overlay were the new, "invisible" ones — which is exactly where the flag note was hiding.</p>
+        </section>
+
+        <section id="decrypt">
+          <h2>7. AES-GCM + MessagePack decode</h2>
+          <p>Each note's payload is a blob structured as <code>ciphertext || tag (16 bytes)</code>. The nonce is derived deterministically from the note's <code>created_at</code> timestamp (milliseconds):</p>
+          <pre><code>import hashlib
+
+def nonce_from_ts(ts: int) -> bytes:
+    b = ts.to_bytes(8, "little").ljust(16, b"\x00")
+    return hashlib.sha256(b"no" + b).digest()[:12]</code></pre>
+          <p>Then decrypt with AES-GCM and unpack the result with MessagePack:</p>
+          <pre><code>from Crypto.Cipher import AES
+import msgpack
+
+cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+plaintext = cipher.decrypt_and_verify(ct[:-16], ct[-16:])
+obj = msgpack.unpackb(plaintext, raw=False)
+print(obj["body"])  # → ROCSC{...}</code></pre>
+        </section>
+
+        <section id="solve">
+          <h2>8. Putting it all together</h2>
+          <p>The full solve chain:</p>
+          <ol>
+            <li>Parse <code>security.xml</code> → get <code>salt</code>, <code>iters</code>, <code>dklen</code>.</li>
+            <li>Extract <code>libnative.so</code> from APK → find the pepper string in Ghidra.</li>
+            <li>Derive the AES key with PBKDF2 from <code>PIN:pepper</code>.</li>
+            <li>Read DB and WAL as raw bytes — don't touch sqlite3 again.</li>
+            <li>Parse WAL frames → split into committed / uncommitted page maps.</li>
+            <li>Use the full overlay to find the <code>notes</code> root page via <code>sqlite_master</code>.</li>
+            <li>Traverse the B-tree; collect records only present in uncommitted pages.</li>
+            <li>For each new record: derive nonce from <code>created_at</code>, AES-GCM decrypt, msgpack decode.</li>
+            <li>The body of the decrypted note contains <code>ROCSC{...}</code>.</li>
+          </ol>
+          <div class="note">
+            The whole trick here is that the flag is structurally invisible to SQLite's normal read path. The WAL parser and B-tree traversal need to be written from scratch — there's no shortcut through the standard library.
+          </div>
+          <p>
+            Honestly the crypto part at the end was the easy bit. Most of the time went into understanding the WAL format and then carefully rebuilding the page overlay without corrupting anything. Once that worked, the AES-GCM + msgpack step was almost a relief.
+          </p>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>
