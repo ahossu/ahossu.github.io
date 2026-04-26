@@ -255,7 +255,7 @@
             Arno (HackTheBox)</a>. The only file you get is an Android app: <code>Arno.apk</code>.
           </p>
           <p>
-            I was expecting some mobile reversing, but as soon as I looked inside the APK it was clearly Unity IL2CPP.
+            Opening the APK makes the challenge type immediately clear: both <code>libil2cpp.so</code> and <code>global-metadata.dat</code> are present, so this is Unity IL2CPP — not plain Mono C#.
           </p>
           <p>
             The basic idea:
@@ -319,7 +319,7 @@ app_dec/assets/bin/Data/Managed/Metadata/global-metadata.dat</code></pre>
         <section id="ilspy">
           <h2>3. Quick C# view with ilspycmd</h2>
           <p>
-            Before staring at ARM64 in IDA, I like to get a rough feel for the managed code.
+            Before loading ARM64 in IDA, I used <code>ilspycmd</code> to get a quick view of the managed code.
           </p>
           <p>I dumped the dummy DLL with <code>ilspycmd</code>:</p>
 
@@ -464,8 +464,7 @@ ct_hex  = "13ebf3953a9b8c13c6e5471f7eeaa0174b6c1fac41802002da16eb32fa88f63c57018
           </ul>
 
           <p>
-            So nothing fancy: AES-CBC with PKCS7 padding, output is a UTF-8 string (the flag).
-            That’s easy to re-create in Python.
+            AES-CBC with PKCS7 padding, output is a UTF-8 string (the flag).
           </p>
         </section>
 
@@ -504,19 +503,15 @@ print(flag)</code></pre>
         <section>
           <h2>Wrap-up</h2>
           <p>
-            Arno is basically a “template” Unity IL2CPP Android challenge:
+            Arno follows the standard Unity IL2CPP Android challenge pattern:
           </p>
           <ul>
             <li>Find <code>libil2cpp.so</code> + <code>global-metadata.dat</code> inside the APK.</li>
             <li>Use Il2CppDumper to get native mappings and a reconstructed C# view.</li>
-            <li>Use IDA with the script.json to recover function names.</li>
+            <li>Use IDA with <code>script.json</code> to recover function names.</li>
             <li>Map <code>&lt;PrivateImplementationDetails&gt;</code> fields to offsets in the metadata file.</li>
             <li>Rebuild the AES-CBC decryption in a script and recover the flag.</li>
           </ul>
-          <p>
-            After a few IL2CPP challenges, the workflow becomes quite consistent — it's easier to focus
-            on the actual variations once the tooling steps are familiar.
-          </p>
         </section>
       </article>
 
