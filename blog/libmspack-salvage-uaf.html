@@ -183,8 +183,8 @@
 
         <section id="context">
           <h2>1. Context</h2>
-          <p>libmspack is the reference C library for Microsoft Cabinet (<code>.cab</code>) files, used directly by <code>cabextract</code> and by a number of downstream package managers and installer tools. The <code>cabextract -f</code> flag enables salvage mode (<code>MSCABD_PARAM_SALVAGE = 1</code>), which tries to extract files even from structurally malformed cabinets.</p>
-          <p>I found this during a manual audit of <code>mspack/cabd.c</code>, focusing on the salvage path since it's the code that explicitly handles malformed input — and therefore the code most likely to have handled some edge cases incorrectly.</p>
+          <p>libmspack is the reference C library for Microsoft Cabinet (<code>.cab</code>) files, used directly by <code>cabextract</code> and several package managers and installer tools downstream. The <code>cabextract -f</code> flag enables salvage mode (<code>MSCABD_PARAM_SALVAGE = 1</code>), which tries to extract files even from structurally malformed cabinets.</p>
+          <p>I found this during a manual audit of <code>mspack/cabd.c</code>, focusing on the salvage path since it explicitly handles malformed input — the natural place to look for missed edge cases.</p>
         </section>
 
         <section id="salvage">
@@ -242,7 +242,7 @@ freed by thread T0 here:
             <li>One valid CFFILE entry at offset 44, with filename <code>x</code></li>
           </ul>
           <p>Flow: first read at <code>cffile_offset=44</code> succeeds, builds a one-file list. Second read seeks to offset 100 in a 62-byte file — the seek succeeds on POSIX, the subsequent read returns 0 bytes (<code>MSPACK_ERR_READ</code>), <code>cabd_read_files()</code> returns without updating <code>cab-&gt;base.files</code>. The merge loop creates the circular list. <code>cabd_close()</code> crashes at line 252.</p>
-          <p>All four conditions needed to trigger the bug are fully attacker-controlled via the crafted cabinet structure.</p>
+          <p>All four trigger conditions are attacker-controlled.</p>
         </section>
 
         <section id="secondary">

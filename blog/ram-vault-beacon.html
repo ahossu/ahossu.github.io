@@ -200,7 +200,7 @@
     └── fork 1.2.2  C2 beacon
         ├── fork 1.2.2.1  DNS beacon (3 A-record queries)
         └── fork 1.2.2.2  HTTP POST to /beacon</code></pre>
-          <p>The flag material never appears in plaintext anywhere on disk or in the network traffic. All three artifacts are needed to reconstruct the decryption key — which is exactly why the challenge provides a PCAP, a memory dump, and a disk image separately.</p>
+          <p>The flag material never appears in plaintext anywhere on disk or in the network traffic. All three artifacts are needed to reconstruct the decryption key — the challenge splits them across a PCAP, a memory dump, and a disk image.</p>
         </section>
 
         <section id="pcap">
@@ -280,7 +280,7 @@ print("FLAG{" + flag_bytes.hex() + "}")</code></pre>
           <div class="note">
             pynacl exposes XChaCha20-Poly1305 through its low-level bindings in <code>nacl.bindings</code>. The function expects ciphertext including the 16-byte tag, which matches the vault layout exactly. Alternatively, use libsodium directly via ctypes or pysodium.
           </div>
-          <p>The decryption itself came together quickly. What took time was tracking down all the pieces: <code>ts_window</code> from the PCAP, three env vars buried in the memory dump, and <code>machine-id</code> from disk. The challenge is really a multi-artifact forensics puzzle dressed up as malware analysis.</p>
+          <p>The decryption itself came together quickly. What took time was tracking down all the pieces: <code>ts_window</code> from the PCAP, three env vars buried in the memory dump, and <code>machine-id</code> from disk.</p>
         </section>
       </article>
 

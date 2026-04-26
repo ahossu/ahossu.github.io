@@ -268,7 +268,7 @@ print(r.text)</code></pre>
           <div class="note">
             The <code>setTimeout</code> delay is necessary — <code>GoogleConnectService</code> is loaded after the main activity initializes. The hook needs to be in place before the user taps "Share Score", so 3 seconds is enough time in practice.
           </div>
-          <p>The Python approach is cleaner and doesn't require a rooted device or Frida setup. Either way, the core is the same: the secret is in the decompiled source, the signing scheme is directly reversible, and the score threshold is in the challenge description.</p>
+          <p>The Python approach is cleaner and doesn't require a rooted device or Frida setup. Either way, the core is the same: the secret is in the decompiled source, the signing scheme is HMAC-SHA256 with a hardcoded key, and the score threshold is in the challenge description.</p>
         </section>
       </article>
 
