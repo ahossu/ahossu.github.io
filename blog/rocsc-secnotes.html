@@ -290,10 +290,10 @@ print(obj["body"])  # → ROCSC{...}</code></pre>
             <li>The body of the decrypted note contains <code>ROCSC{...}</code>.</li>
           </ol>
           <div class="note">
-            The whole trick here is that the flag is structurally invisible to SQLite's normal read path. The WAL parser and B-tree traversal need to be written from scratch — there's no shortcut through the standard library.
+            The flag is structurally invisible to SQLite's normal read path. The WAL parser and B-tree traversal need to be written from scratch — there's no shortcut through the standard library.
           </div>
           <p>
-            The crypto at the end was the simpler part. Most of the time went into understanding the WAL format and carefully rebuilding the page overlay without corrupting anything. Once that was working, the AES-GCM + MessagePack step followed naturally.
+            Most of the time went into understanding the WAL format and carefully rebuilding the page overlay without corrupting anything. The AES-GCM + MessagePack step at the end followed naturally once the overlay was working.
           </p>
         </section>
       </article>

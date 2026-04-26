@@ -279,7 +279,7 @@ print("FLAG{" + flag_bytes.hex() + "}")</code></pre>
           <div class="note">
             pynacl's <code>Aead</code> class uses XChaCha20-Poly1305 by default with a 24-byte nonce, which matches exactly. Alternatively, use libsodium directly via ctypes or cffi.
           </div>
-          <p>The crypto itself was the easy part. What took time was tracking down all the pieces: <code>ts_window</code> from the PCAP, three env vars buried in the memory dump, and <code>machine-id</code> from disk. The challenge is really a multi-artifact forensics puzzle dressed up as malware analysis.</p>
+          <p>The decryption itself came together quickly. What took time was tracking down all the pieces: <code>ts_window</code> from the PCAP, three env vars buried in the memory dump, and <code>machine-id</code> from disk. The challenge is really a multi-artifact forensics puzzle dressed up as malware analysis.</p>
         </section>
       </article>
 
