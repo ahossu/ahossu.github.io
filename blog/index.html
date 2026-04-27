@@ -286,6 +286,24 @@
               </p>
             </a>
 
+            <a class="post-card" href="kernel-backdoor-android">
+              <h2 class="post-title">KernelBackdoor (UNBR Finals 2026) — Android + Hidden Kernel Module</h2>
+              <p class="post-meta">
+                <span>Android • Reverse Engineering • Linux Kernel</span>
+                <span>UNBR Finals 2026</span>
+                <span>Challenge by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Android</span>
+                <span class="tag">Linux Kernel</span>
+                <span class="tag">ioctl</span>
+                <span class="tag">AES</span>
+              </div>
+              <p class="post-excerpt">
+                An Android APK shipping a <code>.ko</code> in <code>assets/</code>. Load the module manually, reverse the XOR token from <code>libnative.so</code>, and hit <code>ioctl(0x1337)</code> on <code>/dev/ctf</code> to get the flag back.
+              </p>
+            </a>
+
             <a class="post-card" href="ram-vault-beacon">
               <h2 class="post-title">RAM Vault Beacon (UNBR Quals 2026) — Linux Malware Forensics</h2>
               <p class="post-meta">
@@ -302,24 +320,6 @@
               </div>
               <p class="post-excerpt">
                 Linux malware forking into an anti-analysis tree, storing encrypted flag bytes in an anonymous <code>mmap</code> region. Combine PCAP, memory dump, and disk image to reconstruct the SHA256 key chain and decrypt.
-              </p>
-            </a>
-
-            <a class="post-card" href="kernel-backdoor-android">
-              <h2 class="post-title">KernelBackdoor (UNBR Finals 2026) — Android + Hidden Kernel Module</h2>
-              <p class="post-meta">
-                <span>Android • Reverse Engineering • Linux Kernel</span>
-                <span>UNBR Finals 2026</span>
-                <span>Challenge by Alexandru Hossu</span>
-              </p>
-              <div class="post-tags">
-                <span class="tag">Android</span>
-                <span class="tag">Linux Kernel</span>
-                <span class="tag">ioctl</span>
-                <span class="tag">AES</span>
-              </div>
-              <p class="post-excerpt">
-                An Android APK shipping a <code>.ko</code> in <code>assets/</code>. Load the module manually, reverse the XOR token from <code>libnative.so</code>, and hit <code>ioctl(0x1337)</code> on <code>/dev/ctf</code> to get the flag back.
               </p>
             </a>
 
