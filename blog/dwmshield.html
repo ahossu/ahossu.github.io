@@ -194,7 +194,7 @@
         <section id="dwm-architecture">
           <h2>2. How DWM enforces capture exclusion</h2>
           <p>The Desktop Window Manager (<code>dwm.exe</code>) is a user-mode compositing process — it reads the contents of every window's backing surface and composites them into the final frame. What makes capture exclusion work is that DWM maintains two separate rendering paths: one for the physical display and one for any capture consumer (DXGI output duplication, WGC, etc.). When a window is marked with <code>WDA_EXCLUDEFROMCAPTURE</code>, DWM includes it in the display render pass but skips it in the capture render pass — the window shows on your screen, but the captured frame sees nothing there.</p>
-          <p>The exclusion flag is not stored by the capture API itself. It lives on the window's composition surface object inside <code>win32kfull.sys</code>. DWM reads it through its normal communication with the kernel's window manager when compositing each frame. This is why no user-mode recorder can work around it — the flag is set in the kernel, and DWM enforces it before any user-mode code ever sees the pixel data.</p>
+          <p>The exclusion flag is not stored by the capture API itself. It lives on the window's sprite object inside <code>win32kfull.sys</code>. DWM reads it through its normal communication with the kernel's window manager when compositing each frame. This is why no user-mode recorder can work around it — the flag is set in the kernel, and DWM enforces it before any user-mode code ever sees the pixel data.</p>
         </section>
 
         <section id="reversing">
