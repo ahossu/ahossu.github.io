@@ -5,7 +5,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
     <title>DWMShield — Kernel-Mode Window Capture Exclusion on Windows</title>
-    <meta name="description" content="Research into how Windows DWM enforces WDA_EXCLUDEFROMCAPTURE at the kernel level, and a proof-of-concept driver that calls win32kfull!GreProtectSpriteContent directly to hide any window from user-mode screen capture">
+    <meta name="description" content="A kernel driver PoC that calls win32kfull!GreProtectSpriteContent directly to hide any window from user-mode screen capture, bypassing SetWindowDisplayAffinity entirely">
     <meta property="og:title" content="DWMShield — Kernel-Mode Window Capture Exclusion on Windows" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
@@ -152,7 +152,9 @@
         <header class="post-header">
           <h1>DWMShield — Kernel-Mode Window Capture Exclusion on Windows</h1>
           <p class="post-subtitle">
-            A research proof-of-concept that calls <code>win32kfull!GreProtectSpriteContent</code> directly from a kernel driver to mark any window as excluded from screen capture — making it invisible to every user-mode recording API without touching <code>SetWindowDisplayAffinity</code>.
+            A kernel driver PoC that calls <code>win32kfull!GreProtectSpriteContent</code> directly to
+            make any window invisible to every user-mode screen recorder, without going through
+            <code>SetWindowDisplayAffinity</code>.
           </p>
           <p class="post-meta">
             <span>Windows Kernel • Reverse Engineering</span>
@@ -171,85 +173,74 @@
         <nav class="post-toc">
           <p class="post-toc-title">On this page</p>
           <ul>
-            <li><a href="#background">1. Background — the documented capture exclusion path</a></li>
-            <li><a href="#question">2. The research question</a></li>
-            <li><a href="#reversing">3. Reversing win32kfull.sys to find GreProtectSpriteContent</a></li>
-            <li><a href="#driver">4. How the driver works</a></li>
-            <li><a href="#kaslr">5. KASLR and the address problem</a></li>
-            <li><a href="#result">6. Result and takeaway</a></li>
-            <li><a href="#limitations">7. Limitations</a></li>
+            <li><a href="#starting-point">1. Starting point</a></li>
+            <li><a href="#reversing">2. Tracing the call chain in win32kfull.sys</a></li>
+            <li><a href="#driver">3. The driver</a></li>
+            <li><a href="#kaslr">4. KASLR</a></li>
+            <li><a href="#what-it-confirms">5. What it confirms</a></li>
+            <li><a href="#limitations">6. Limitations</a></li>
           </ul>
         </nav>
 
-        <section id="background">
-          <h2>1. Background — the documented capture exclusion path</h2>
-          <p>Windows 10 introduced <code>SetWindowDisplayAffinity</code> with the flag <code>WDA_EXCLUDEFROMCAPTURE</code> (value <code>0x11</code>). A process can call it on one of its own windows and that window will disappear from the output of every screen-capture API in user mode — <code>BitBlt</code>, <code>PrintWindow</code>, the Graphics Capture API, OBS, everything. The excluded window appears black or is simply absent in the captured frame, depending on the capturing method.</p>
-          <p>The catch is that <code>SetWindowDisplayAffinity</code> only works on windows owned by the calling process, and the protection state can be queried with <code>GetWindowDisplayAffinity</code>. Both facts make it unsuitable for anything that needs to apply the exclusion from outside the target window's process, or that needs it to be undetectable from user mode.</p>
-          <p>The question I started with: is this exclusion purely a DWM-side policy, or is it enforced deeper in the graphics stack?</p>
-        </section>
-
-        <section id="question">
-          <h2>2. The research question</h2>
-          <p>The public API path is well understood. The interesting part is what happens below it. <code>SetWindowDisplayAffinity</code> is a thin wrapper in <code>user32.dll</code> that ultimately dispatches to the kernel through <code>NtUserSetWindowDisplayAffinity</code>. From there it reaches <code>win32kfull.sys</code> — the kernel-mode component that manages window objects.</p>
-          <p>The goal was to find the internal routine responsible for actually applying the capture-exclusion flag, call it directly from a driver, and confirm that the result is indistinguishable from the documented path as far as DWM and all user-mode capturers are concerned.</p>
+        <section id="starting-point">
+          <h2>1. Starting point</h2>
+          <p><code>SetWindowDisplayAffinity</code> with <code>WDA_EXCLUDEFROMCAPTURE</code> (flag <code>0x11</code>) hides a window from all user-mode screen capture — <code>BitBlt</code>, <code>PrintWindow</code>, OBS, the Windows Graphics Capture API, all of it. The captured frame either shows the window as solid black or skips it entirely depending on the method used.</p>
+          <p>Two things about the documented API bothered me. First, it only works on windows owned by the calling process. Second, the protection state is readable via <code>GetWindowDisplayAffinity</code>, so anything checking for it can detect it. I wanted to see what was actually enforcing the exclusion below the API — and whether calling that internal mechanism directly would produce the same result without those constraints.</p>
+          <p>The full source and build instructions are on GitHub: <a href="https://github.com/ahossu/DWMShield" target="_blank" rel="noopener noreferrer">ahossu/DWMShield</a>.</p>
         </section>
 
         <section id="reversing">
-          <h2>3. Reversing win32kfull.sys to find GreProtectSpriteContent</h2>
-          <p>I loaded <code>win32kfull.sys</code> in IDA and traced the call chain from <code>NtUserSetWindowDisplayAffinity</code> down. The path goes through a handful of internal window-management routines before landing in <code>GreProtectSpriteContent</code> — the function that tells the DWM compositor to apply the capture-exclusion state to the window's sprite.</p>
-          <p>It is not exported and has no documented prototype. Its address can be found in a live kernel session with WinDbg:</p>
+          <h2>2. Tracing the call chain in win32kfull.sys</h2>
+          <p><code>SetWindowDisplayAffinity</code> is a thin wrapper in <code>user32.dll</code>. It goes through <code>NtUserSetWindowDisplayAffinity</code> into the kernel, where <code>win32kfull.sys</code> handles everything related to window objects and the DWM compositor.</p>
+          <p>I loaded <code>win32kfull.sys</code> in IDA and traced the call chain down from <code>NtUserSetWindowDisplayAffinity</code>. A few layers in, it lands in <code>GreProtectSpriteContent</code> — the routine that tells DWM to mark a window's sprite as excluded from any captured surface. It's not exported and has no documented prototype. Its address in a live kernel session:</p>
           <pre><code>lkd> x win32kfull!GreProtectSpriteContent
 fffff806`12345678 win32kfull!GreProtectSpriteContent</code></pre>
-          <p>The function takes two arguments: an HWND identifying the target window, and a DWORD flags value. Passing <code>0x11</code> mirrors exactly what the documented path does when called with <code>WDA_EXCLUDEFROMCAPTURE</code>. After the call, the DWM marks the window's sprite as excluded and stops compositing it into any captured surface.</p>
-          <div class="note">
-            Because <code>GreProtectSpriteContent</code> is not exported from <code>win32kfull.sys</code>, its address must be found at runtime. KASLR randomises the module base on every boot, so a hardcoded offset would break after a reboot. More on this below.
-          </div>
+          <p>It takes two arguments: an HWND and a DWORD flags value. Passing <code>0x11</code> — the same value as <code>WDA_EXCLUDEFROMCAPTURE</code> — produces exactly the same DWM behavior as the documented path. After the call, the window's sprite is excluded from every captured surface, regardless of which process owns the window.</p>
         </section>
 
         <section id="driver">
-          <h2>4. How the driver works</h2>
-          <p>The driver creates a character device <code>\Device\HideWindow</code> with a symbolic link <code>\DosDevices\HideWindow</code>, accessible from user mode as <code>\\.\HideWindow</code>. A small user-mode companion (<code>protect.exe</code>) sends a single IOCTL containing the HWND of any window — it does not need to be owned by the calling process.</p>
-          <p>The driver's <code>IRP_MJ_DEVICE_CONTROL</code> handler receives the HWND, calls <code>GreProtectSpriteContent</code> at the hardcoded address with the flag <code>0x11</code>, and returns. That's the entire critical path:</p>
-          <pre><code>// driver IRP_MJ_DEVICE_CONTROL handler (simplified)
-HWND hwnd = *(HWND *)inputBuffer;
-typedef NTSTATUS (*GRE_PROTECT)(HWND, DWORD);
+          <h2>3. The driver</h2>
+          <p>The driver creates <code>\Device\HideWindow</code> with a symbolic link at <code>\DosDevices\HideWindow</code> (<code>\\.\HideWindow</code> from user mode). A small companion binary, <code>protect.exe</code>, sends a single IOCTL with the target HWND — it doesn't need to own the window.</p>
+          <p>The <code>IRP_MJ_DEVICE_CONTROL</code> handler reads the HWND out of the input buffer and calls <code>GreProtectSpriteContent</code>:</p>
+          <pre><code>HWND hwnd = *(HWND *)inputBuffer;
 
+typedef NTSTATUS (*GRE_PROTECT)(HWND, DWORD);
 GRE_PROTECT fn = (GRE_PROTECT)GRE_PROTECT_SPRITE_CONTENT_ADDR;
-fn(hwnd, 0x11);   // 0x11 = WDA_EXCLUDEFROMCAPTURE</code></pre>
-          <p>After this call the target window is excluded from every user-mode capture surface. OBS, the Windows Graphics Capture API, <code>BitBlt</code>/<code>PrintWindow</code> — all of them render the window as absent or black, identical to the result of calling <code>SetWindowDisplayAffinity</code> through the documented path. The difference is that <code>GetWindowDisplayAffinity</code> called from another user-mode process cannot reliably detect that the protection came from a kernel driver rather than from the window's own process.</p>
-          <p>Installing and running it requires test-signing mode:</p>
+fn(hwnd, 0x11);</code></pre>
+          <p>That's the entire critical path. After that call, OBS, the Graphics Capture API, <code>BitBlt</code>/<code>PrintWindow</code> — none of them can capture the target window, same as if the window's own process had called <code>SetWindowDisplayAffinity</code>. Installing it requires test-signing mode:</p>
           <pre><code>bcdedit /set testsigning on
 Restart-Computer
 
 sc.exe create HideWindow type= kernel binPath= C:\Drivers\HideWindow.sys
 sc.exe start HideWindow
-protect.exe   # sends IOCTL with HWND of target window</code></pre>
+protect.exe</code></pre>
         </section>
 
         <section id="kaslr">
-          <h2>5. KASLR and the address problem</h2>
-          <p>The single biggest limitation is KASLR. <code>GreProtectSpriteContent</code> is not exported, so there's no dynamic resolution path without additional work — pattern scanning the loaded module in kernel memory, or maintaining an offset table per Windows build. For a research PoC the address is simply hardcoded as a <code>#define</code> and must be updated after each reboot:</p>
-          <pre><code>#define GRE_PROTECT_SPRITE_CONTENT_ADDR 0xfffff806`12345678ULL</code></pre>
-          <p>A more robust implementation would resolve the address at driver load time by scanning for a known byte signature in the <code>win32kfull</code> image. That's a straightforward extension but outside the scope of this PoC — the goal here was to confirm the mechanism, not to build a production-grade tool.</p>
+          <h2>4. KASLR</h2>
+          <p><code>GreProtectSpriteContent</code> is not exported, so its address can't be resolved at load time without additional work — pattern scanning the loaded image in kernel memory, or maintaining a per-build offset table. For this PoC the address is hardcoded as a <code>#define</code> and needs to be updated after every reboot:</p>
+          <pre><code>#define GRE_PROTECT_SPRITE_CONTENT_ADDR 0xfffff80612345678ULL</code></pre>
+          <p>The current address for any given boot can be read with WinDbg:</p>
+          <pre><code>lkd> x win32kfull!GreProtectSpriteContent</code></pre>
+          <p>Pattern scanning at driver load time would fix this, but it's outside the scope of what this PoC was trying to answer.</p>
         </section>
 
-        <section id="result">
-          <h2>6. Result and takeaway</h2>
-          <p>The experiment confirms that the capture-exclusion mechanism is genuinely enforced inside the kernel, inside DWM's compositor path. There is no user-mode component that could be patched or bypassed to recover the captured content — if <code>GreProtectSpriteContent</code> has been called with the right flag, DWM simply does not include that window in any captured surface.</p>
-          <p>The corollary is that any security model depending on user-mode APIs to apply or detect this kind of protection has a fundamental ceiling: a kernel driver can apply the same state without going through the documented path, and the user-mode detection APIs will not see a meaningful difference.</p>
-          <p>The full source is on GitHub: <a href="https://github.com/ahossu/DWMShield" target="_blank" rel="noopener noreferrer">ahossu/DWMShield</a>.</p>
+        <section id="what-it-confirms">
+          <h2>5. What it confirms</h2>
+          <p>The exclusion is enforced entirely inside the DWM compositor path in the kernel — there's no user-mode component involved in the actual filtering. A user-mode recorder can't work around it, and calling <code>GetWindowDisplayAffinity</code> from another process gives no reliable indication that the protection came from a kernel driver rather than from the window's own process.</p>
+          <p>It also shows that <code>WDA_EXCLUDEFROMCAPTURE</code> is not just a hint — it's a hard enforcement point inside DWM, applied at the sprite level before any captured surface is composed.</p>
         </section>
 
         <section id="limitations">
-          <h2>7. Limitations</h2>
+          <h2>6. Limitations</h2>
           <ul>
-            <li><strong>Address hardcoding.</strong> The <code>GreProtectSpriteContent</code> address must be updated manually after every reboot. Function signatures can also change across Windows updates.</li>
-            <li><strong>Windows 10 / 11 only.</strong> The internal function exists in those versions. It was tested on build 19041 (Windows 10 2004).</li>
-            <li><strong>No HWND validation.</strong> The driver passes the HWND directly to the internal function without any sanity check. A malformed handle could cause unpredictable behaviour in the kernel.</li>
-            <li><strong>Test signing required.</strong> The driver needs <code>testsigning</code> mode or a valid EV certificate. Neither is suitable for deployment on locked-down systems.</li>
+            <li><strong>KASLR.</strong> The <code>GreProtectSpriteContent</code> address changes every reboot and must be updated manually. Its signature can also change across Windows updates.</li>
+            <li><strong>Windows 10 / 11 only.</strong> Tested on build 19041 (Windows 10 2004). The internal function exists in those versions but there's no guarantee about future builds.</li>
+            <li><strong>No HWND validation.</strong> The driver passes the HWND directly to the internal function without any sanity checks. A malformed handle could cause unpredictable behaviour in the kernel.</li>
+            <li><strong>Test signing required.</strong> The driver is test-signed and requires <code>testsigning</code> mode — not suitable for deployment on a locked-down system.</li>
           </ul>
           <div class="note">
-            This is a research proof-of-concept. The code is intentionally minimal — it demonstrates the mechanism, not a deployable implementation.
+            This is a PoC built to answer a specific question about how DWM enforces capture exclusion. The code is intentionally minimal.
           </div>
         </section>
       </article>
