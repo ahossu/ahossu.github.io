@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>llm-decompile-cleaner — Decompiler Output Cleanup with llm4decompile-22b-v2</title>
+    <meta name="description" content="A decompiler-agnostic post-processor that splits Ghidra/IDA/Binary Ninja C dumps by function and pipes each through llm4decompile-22b-v2 — a model trained specifically on decompiler output — then deduplicates prototypes and normalizes whitespace">
+    <meta property="og:title" content="llm-decompile-cleaner — Decompiler Output Cleanup with llm4decompile-22b-v2" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>llm-decompile-cleaner — Decompiler Output Cleanup with llm4decompile-22b-v2</h1>
+          <p class="post-subtitle">
+            A post-processor for Ghidra, IDA, and Binary Ninja C dumps that splits the output by function
+            and pipes each one through <code>llm4decompile-22b-v2</code> — a model trained specifically
+            on decompiler output — then deduplicates prototypes and normalizes whitespace.
+          </p>
+          <p class="post-meta">
+            <span>Python • LLM • Reverse Engineering</span>
+            <span>Tool / Open Source</span>
+            <span>by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Python</span>
+            <span class="tag">LLM</span>
+            <span class="tag">Ghidra / IDA</span>
+            <span class="tag">Reverse Engineering</span>
+            <span class="tag">Tooling</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#problem">1. The problem with decompiler output</a></li>
+            <li><a href="#model">2. Why llm4decompile-22b-v2</a></li>
+            <li><a href="#pipeline">3. How it works</a></li>
+          </ul>
+        </nav>
+
+        <section id="problem">
+          <h2>1. The problem with decompiler output</h2>
+          <p>When working through a binary — whether for RE research, a CTF, or auditing a native library — you often export anywhere from a handful to several dozen functions as C pseudocode from Ghidra, IDA, or Binary Ninja. The output is readable, but it's consistently noisy: stack variables come out as <code>local_8</code> and <code>local_10</code>, unnamed functions are <code>sub_140001234</code>, forward declarations get duplicated when the decompiler emits a prototype at the top of the dump and then the full definition below, and formatting varies enough between tools that a batch export looks visually inconsistent throughout.</p>
+          <p>Cleaning this by hand for a few functions is fine. Cleaning 40 functions from a native library before you can actually reason about the code is tedious enough that I wanted a way to automate the renaming and cleanup pass. The full source is on GitHub: <a href="https://github.com/ahossu/llm-decompile-cleaner" target="_blank" rel="noopener noreferrer">ahossu/llm-decompile-cleaner</a>.</p>
+        </section>
+
+        <section id="model">
+          <h2>2. Why llm4decompile-22b-v2</h2>
+          <p>The obvious approach is to pipe the decompiler output through a general-purpose LLM. It works, but general models have a tendency to over-rename: they'll confidently replace <code>local_8</code> with something like <code>buffer</code> based on surrounding context, and sometimes that guess is wrong. A misnamed variable in RE output is worse than a generic one because it actively points you in the wrong direction.</p>
+          <p><code>llm4decompile-22b-v2</code> is a model trained specifically on decompiled code rather than general source code. It understands the naming patterns that decompilers produce — <code>sub_XXXXXXXX</code> for functions without symbols, <code>local_N</code> for stack-allocated variables, <code>param_N</code> for parameters — and works within those conventions rather than trying to impose source-code naming on top of them. The 22b-v2 checkpoint is the largest and most capable in the series. It's served through a HuggingFace Inference Endpoint configured in <code>config.py</code>.</p>
+        </section>
+
+        <section id="pipeline">
+          <h2>3. How it works</h2>
+          <p>The input is a raw C dump from any decompiler. The only requirement is that each function block starts with a comment marker — the default format is <code>/* ---- Function: foo ---- */</code>, which matches what IDA's Hex-Rays pseudocode export and Ghidra's C output scripts produce. The regex <code>_SPLIT_RE</code> controls the exact pattern and can be adjusted for other formats.</p>
+          <p>Once split, each function is sent as a separate inference request. Sending functions individually rather than dumping the whole file into a single prompt avoids hitting the model's context window limit and gives cleaner results per function — the model can focus on one function at a time without 50 unrelated ones in the context.</p>
+          <p>After the model responds, a post-processing pass runs before the output is written:</p>
+          <ul>
+            <li><strong>Duplicate prototype removal.</strong> Decompiler dumps often include a forward declaration at the top of the file and then the full function definition further down. After LLM processing the prototype can reappear in both places — the pass deduplicates them.</li>
+            <li><strong>Whitespace normalization.</strong> Inconsistent indentation and redundant blank lines are cleaned up to make the final output consistent regardless of which decompiler produced the input.</li>
+          </ul>
+          <p>The <code>--keep-intermediate</code> flag saves the raw model response before this pass. Useful if the post-processing strips something it shouldn't, or if you want to diff raw model output against the cleaned version to understand what the pass is doing.</p>
+          <pre><code># after setting your endpoint and token in config.py:
+python llm4decompile_clean.py -i raw_funcs.c -o clean_funcs.c
+
+# keep the raw model output alongside the cleaned file
+python llm4decompile_clean.py -i raw_funcs.c -o clean_funcs.c --keep-intermediate</code></pre>
+          <div class="note">
+            Works with any tool that can write its C pseudocode to a file: IDA, Ghidra, Binary Ninja, radare2, Snowman. The only thing the script needs is the comment marker that separates individual function blocks.
+          </div>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

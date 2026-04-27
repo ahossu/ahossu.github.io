@@ -361,6 +361,25 @@
               </p>
             </a>
 
+            <a class="post-card" href="git-secret-scanner">
+              <h2 class="post-title">git-secret-scanner — Three-Layer Secret Detection in Git History</h2>
+              <p class="post-meta">
+                <span>Python • Security Tools • LLM</span>
+                <span>Tool / Open Source</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Python</span>
+                <span class="tag">Git</span>
+                <span class="tag">Shannon Entropy</span>
+                <span class="tag">LLM</span>
+                <span class="tag">Secret Detection</span>
+              </div>
+              <p class="post-excerpt">
+                Three-layer scanner for leaked credentials in git commit history: regex catches known formats (AWS keys, GitHub PATs, database connection strings, private keys), Shannon entropy scores each match, and an LLM verifies with full commit context — commit message, file path, surrounding diff lines — to filter out test data and placeholders.
+              </p>
+            </a>
+
             <a class="post-card" href="vianuctf-angry-birds">
               <h2 class="post-title">Angry Birds (VianuCTF 2025) — Android HMAC Score Forgery</h2>
               <p class="post-meta">
@@ -377,6 +396,25 @@
               </div>
               <p class="post-excerpt">
                 xdelta-patched Angry Birds APK with a hidden score-submission server. Decompile with JADX, find the hardcoded HMAC-SHA256 secret in <code>GoogleConnectService</code>, forge a 10<sup>9</sup> score, and get the flag.
+              </p>
+            </a>
+
+            <a class="post-card" href="llm-decompile-cleaner">
+              <h2 class="post-title">llm-decompile-cleaner — Decompiler Output Cleanup with llm4decompile-22b-v2</h2>
+              <p class="post-meta">
+                <span>Python • LLM • Reverse Engineering</span>
+                <span>Tool / Open Source</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Python</span>
+                <span class="tag">LLM</span>
+                <span class="tag">Ghidra / IDA</span>
+                <span class="tag">Reverse Engineering</span>
+                <span class="tag">Tooling</span>
+              </div>
+              <p class="post-excerpt">
+                Post-processor for Ghidra, IDA, and Binary Ninja C dumps that splits the output by function and pipes each one through <code>llm4decompile-22b-v2</code> — a model trained specifically on decompiler output rather than general source code — then deduplicates prototype declarations and normalizes whitespace.
               </p>
             </a>
 
