@@ -253,8 +253,8 @@ else if ( b_is_fragmented )
     goto error;</code></pre>
           <p>The <code>!payload_len</code> check is false (65532 is nonzero). The <code>shift &lt; tunnel</code> sub-check is explicitly skipped for fragmented packets due to <code>&amp;&amp; !b_is_fragmented</code>. Both arms fail, the guard never fires, and execution continues.</p>
           <p>Further down, <code>shift = len - payload_len</code> computes a very negative value (<code>60 - 65532 = -65472</code> as a signed difference), and then:</p>
-          <pre><code>pkt->p_buffer += shift;   // p_buffer moves ~64 KB before the allocation
-pkt->i_buffer = len;      // claims 65532 bytes available</code></pre>
+          <pre><code>pkt->p_buffer += shift;        // p_buffer moves ~64 KB before the allocation
+pkt->i_buffer = payload_len;   // claims 65532 bytes available</code></pre>
           <p>The block is returned to the demuxer with a pointer ~64 KB before its actual allocation and a length of 65532. Any demuxer read or write into <code>pkt-&gt;p_buffer</code> for <code>pkt-&gt;i_buffer</code> bytes accesses unallocated heap memory.</p>
           <p>Triggering this requires an attacker-controlled AMT relay — the victim opens a multicast stream URL that routes through the relay. The relay performs the normal AMT handshake, then sends a crafted subsequent IPv6 fragment with <code>Payload Length = 4</code> in the IPv6 header. AMT support is only present in VLC 4.0-dev; the 3.0.x release series is not affected.</p>
           <div class="note">
