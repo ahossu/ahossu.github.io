@@ -224,7 +224,7 @@ print(''.join(chr(b ^ 0x42) for b in ENCODED))
     // backup: hook SessionManager to catch the saved value
     const SM = Java.use("com.courierdrop.app.data.SessionManager");
     SM.saveSession.implementation = function(session) {
-        console.log("[FLAG1] session_id:", session.sessionId.value());
+        console.log("[FLAG1] session_id:", session.sessionId.value);
         return this.saveSession(session);
     };
 });</code></pre>
