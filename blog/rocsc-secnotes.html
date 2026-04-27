@@ -464,7 +464,8 @@ def main():
     db_bytes  = (CASE / "databases/notes.db").read_bytes()
     wal_bytes = (CASE / "databases/notes.db-wal").read_bytes()
 
-    page_size = int.from_bytes(db_bytes[16:18], "big") or 65536
+    _ps = int.from_bytes(db_bytes[16:18], "big")
+    page_size = 65536 if _ps == 1 else _ps
     reserved  = db_bytes[20]
 
     committed, uncommitted = parse_wal(wal_bytes, page_size)
@@ -483,7 +484,9 @@ def main():
     committed_ids = {rid for rid,_ in
                      iter_records(db_bytes, page_size, committed, root_pg, reserved)}
 
-    for rid, cols in iter_records(db_bytes, page_size, uncommitted, root_pg, reserved):
+    # use full overlay so interior pages in committed frames are accessible;
+    # filter out rowids already present in committed state
+    for rid, cols in iter_records(db_bytes, page_size, overlay, root_pg, reserved):
         if rid in committed_ids: continue
         blob = next((c for c in reversed(cols) if isinstance(c,(bytes,bytearray))), None)
         ts   = next((c for c in cols if isinstance(c,int) and c &gt; 1_000_000_000_000), None)
