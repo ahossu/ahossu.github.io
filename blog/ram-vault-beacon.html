@@ -178,6 +178,7 @@
             <li><a href="#vault">4. Vault structure</a></li>
             <li><a href="#kdf">5. Key derivation chain</a></li>
             <li><a href="#decrypt">6. Decrypting the vault</a></li>
+            <li><a href="#solve">7. Complete solve script</a></li>
           </ul>
         </nav>
 
@@ -207,8 +208,19 @@
           <h2>2. PCAP: extracting ts_window and dns_last_ip</h2>
           <p>The HTTP POST to <code>/beacon</code> contains a <code>ts</code> field — a windowed Unix timestamp:</p>
           <pre><code>ts_window = floor(epoch_seconds / 600) * 600</code></pre>
-          <p>I read it directly from the POST body. Wireshark works fine for this, or <code>tshark</code> if you prefer the command line.</p>
-          <p>The DNS beacon fires three A-record queries right at startup. The IP from the <em>last</em> DNS response is used in the HMAC proof (<code>dns_last_ip</code>). I pulled the final A response from the PCAP — it's 4 bytes in big-endian order.</p>
+          <p>I read it directly from the POST body. With tshark:</p>
+          <pre><code># extract ts field from HTTP POST body
+tshark -r capture.pcap -Y "http.request.method == POST" \
+    -T fields -e http.file_data 2>/dev/null | \
+    python3 -c "import sys,urllib.parse; [print(urllib.parse.unquote(l)) for l in sys.stdin]"
+
+# or grep the raw value
+tshark -r capture.pcap -Y "http.request.method == POST" \
+    -T fields -e http.file_data | grep -oP 'ts=\K[0-9]+'</code></pre>
+          <p>The DNS beacon fires three A-record queries right at startup. The IP from the <em>last</em> DNS response is used in the HMAC proof (<code>dns_last_ip</code>). I pulled the final A response from the PCAP — it's 4 bytes in network byte order (big-endian), used as-is in the HMAC:</p>
+          <pre><code># get the last DNS A response answer address
+tshark -r capture.pcap -Y "dns.flags.response == 1 and dns.a" \
+    -T fields -e dns.a | tail -1</code></pre>
         </section>
 
         <section id="memdump">
@@ -220,7 +232,19 @@
             <li><code>KDF_SALT</code> — 32 hex chars (16 bytes)</li>
             <li><code>STAGE_ARGS_B64</code> — base64-encoded argv blob</li>
           </ul>
-          <p>The vault is an 8 MiB anonymous private mapping (<code>rw-p</code>, no file backing, size exactly <code>0x800000</code>). In Volatility you can scan for it in the process's memory map. In a raw dump, look for the vault magic: the 20-byte header starts with version <code>03 00 00 00</code> in little-endian. I also pulled <code>/etc/machine-id</code> from the disk image — it feeds directly into key derivation.</p>
+          <p>The vault is an 8 MiB anonymous private mapping (<code>rw-p</code>, no file backing, size exactly <code>0x800000</code>). With Volatility 3:</p>
+          <pre><code># find the malware process
+vol -f memory.lime linux.pslist
+
+# list its memory maps, look for rw-p anonymous 0x800000
+vol -f memory.lime linux.proc_maps --pid PID | grep "rw-p"
+
+# dump the env vars (contains TASK_ID, KDF_SALT, STAGE_ARGS_B64)
+vol -f memory.lime linux.envars --pid PID
+
+# dump the 8 MiB vault region
+vol -f memory.lime linux.proc_dump --pid PID --dump-dir /tmp/dump/</code></pre>
+          <p>In a raw LiME dump without Volatility, scan for the vault magic directly — the 20-byte header always begins with <code>03 00 00 00</code> (version = 3, little-endian u32). That pattern is rare enough to locate the mapping without symbol support. I also pulled <code>/etc/machine-id</code> from the disk image — it feeds directly into key derivation.</p>
         </section>
 
         <section id="vault">
@@ -281,6 +305,78 @@ print("FLAG{" + flag_bytes.hex() + "}")</code></pre>
             pynacl exposes XChaCha20-Poly1305 through its low-level bindings in <code>nacl.bindings</code>. The function expects ciphertext including the 16-byte tag, which matches the vault layout exactly. Alternatively, use libsodium directly via ctypes or pysodium.
           </div>
           <p>The decryption itself came together quickly. What took time was tracking down all the pieces: <code>ts_window</code> from the PCAP, three env vars buried in the memory dump, and <code>machine-id</code> from disk.</p>
+        </section>
+
+        <section id="solve">
+          <h2>7. Complete solve script</h2>
+          <p>Takes the three artifact paths and a pre-extracted <code>ts_window</code> integer, then derives the key and decrypts the vault. The env vars and vault bytes must be extracted from the memory dump beforehand (Volatility or raw scan).</p>
+          <pre><code>#!/usr/bin/env python3
+"""
+RAM Vault Beacon — Solve Script
+Usage:
+    python3 solve.py \
+        --machine-id /path/to/machine-id \
+        --task-id    &lt;TASK_ID from memory dump&gt; \
+        --kdf-salt   &lt;KDF_SALT from memory dump (hex)&gt; \
+        --stage-args &lt;STAGE_ARGS_B64 from memory dump&gt; \
+        --ts         &lt;ts_window from PCAP (int)&gt; \
+        --vault      &lt;vault.bin — raw 8 MiB dump or just the header+nonce+ct&gt;
+
+pip install pynacl
+"""
+
+import argparse, hashlib, struct, zlib
+from nacl.bindings import crypto_aead_xchacha20poly1305_ietf_decrypt
+
+def derive_key(machine_id, task_id, kdf_salt, stage_args, ts_window):
+    ts_le8    = struct.pack("&lt;Q", ts_window)
+    args_hash = hashlib.sha256(stage_args.encode()).digest()
+    ikm = hashlib.sha256(
+        machine_id + task_id + ts_le8 + args_hash
+    ).digest()
+    return hashlib.sha256(kdf_salt + ikm + b"rocsc/vault").digest()
+
+def parse_vault(data):
+    # header: 5 x u32 little-endian = 20 bytes
+    version, nonce_len, pt_len, ct_len, crc32_ct = struct.unpack_from("&lt;5I", data, 0)
+    assert version  == 3,  f"unexpected version {version}"
+    assert nonce_len == 24, f"unexpected nonce_len {nonce_len}"
+    assert ct_len   == 48, f"unexpected ct_len {ct_len}"
+
+    nonce      = data[20 : 20 + nonce_len]
+    ciphertext = data[20 + nonce_len : 20 + nonce_len + ct_len]
+
+    # verify CRC32 of ciphertext before decryption attempt
+    actual_crc = zlib.crc32(ciphertext) &amp; 0xFFFFFFFF
+    assert actual_crc == crc32_ct, \
+        f"CRC32 mismatch: got {actual_crc:#010x}, expected {crc32_ct:#010x}"
+
+    return nonce, ciphertext
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--machine-id", required=True)
+    p.add_argument("--task-id",    required=True)
+    p.add_argument("--kdf-salt",   required=True, help="hex string (32 chars)")
+    p.add_argument("--stage-args", required=True, help="base64 string from env")
+    p.add_argument("--ts",         required=True, type=int, help="ts_window from PCAP")
+    p.add_argument("--vault",      required=True, help="raw vault bytes file")
+    args = p.parse_args()
+
+    machine_id = open(args.machine_id).read().strip().encode()
+    task_id    = args.task_id.encode()
+    kdf_salt   = bytes.fromhex(args.kdf_salt)
+    vault_data = open(args.vault, "rb").read()
+
+    key  = derive_key(machine_id, task_id, kdf_salt, args.stage_args, args.ts)
+    nonce, ciphertext = parse_vault(vault_data)
+    aad  = hashlib.sha256(machine_id + task_id).digest()
+
+    flag_bytes = crypto_aead_xchacha20poly1305_ietf_decrypt(ciphertext, aad, nonce, key)
+    print("FLAG{" + flag_bytes.hex() + "}")
+
+if __name__ == "__main__":
+    main()</code></pre>
         </section>
       </article>
 

@@ -180,6 +180,7 @@
             <li><a href="#btree">6. B-tree traversal to find the note</a></li>
             <li><a href="#decrypt">7. AES-GCM + MessagePack decode</a></li>
             <li><a href="#solve">8. Putting it all together</a></li>
+            <li><a href="#script">9. Complete solve script</a></li>
           </ul>
         </nav>
 
@@ -295,6 +296,211 @@ print(obj["body"])  # → ROCSC{...}</code></pre>
           <p>
             Most of the time went into understanding the WAL format and carefully rebuilding the page overlay without corrupting anything. The AES-GCM + MessagePack step at the end followed naturally once the overlay was working.
           </p>
+        </section>
+
+        <section id="script">
+          <h2>9. Complete solve script</h2>
+          <p>Self-contained. Extracts the pepper from the APK automatically (needs <code>unzip</code> and <code>strings</code> in <code>$PATH</code>), then does the full WAL traversal and decryption. Pass the PIN as an environment variable.</p>
+          <pre><code>pip install pycryptodome msgpack</code></pre>
+          <pre><code>#!/usr/bin/env python3
+"""
+ROCSC SecNotes — Solve Script
+Usage:
+    unzip -q case.zip -d case
+    PIN=12345678 python3 solve.py
+
+Environment:
+    PIN          — numeric PIN (from policy in security.xml or brute-forced)
+    CASE_DIR     — path to extracted case directory (default: ./case)
+    APK_PATH     — path to app.apk (default: ./app.apk)
+"""
+
+import base64, hashlib, os, struct, subprocess, xml.etree.ElementTree as ET
+from pathlib import Path
+from Crypto.Cipher import AES
+import msgpack
+
+CASE = Path(os.environ.get("CASE_DIR", "case")).resolve()
+APK  = Path(os.environ.get("APK_PATH",  "app.apk")).resolve()
+PIN  = os.environ.get("PIN", "12345678")
+
+# ── helpers ──────────────────────────────────────────────────────────────
+
+def varint(buf, off):
+    v = 0
+    for i in range(9):
+        b = buf[off + i]
+        v = (v &lt;&lt; 8 | b) if i == 8 else (v &lt;&lt; 7 | (b &amp; 0x7f))
+        if i == 8 or not (b &amp; 0x80):
+            return v, off + i + 1
+    return v, off + 9
+
+def serial_size(st):
+    sizes = {0:0,1:1,2:2,3:3,4:4,5:6,6:8,7:8,8:0,9:0}
+    return sizes.get(st, (st-12)//2 if st &gt;= 12 else 0)
+
+def decode_serial(st, data):
+    if st in (0,8,9): return {0:None,8:0,9:1}[st]
+    n = serial_size(st)
+    raw = data[:n]
+    if st == 7: return struct.unpack("&gt;d", raw)[0]
+    if st &gt;= 12:
+        return raw.decode("utf-8","replace") if st % 2 == 1 else raw
+    return int.from_bytes(raw, "big", signed=True)
+
+def parse_record(payload):
+    hs, p = varint(payload, 0)
+    serials, idx = [], p
+    while idx &lt; hs:
+        st, idx = varint(payload, idx)
+        serials.append(st)
+    data, out, pos = payload[hs:], [], 0
+    for st in serials:
+        n = serial_size(st)
+        out.append(decode_serial(st, data[pos:]))
+        pos += n
+    return out
+
+def read_payload(db, page_size, overlay, pgno, size, start, reserved):
+    page    = overlay.get(pgno, db[(pgno-1)*page_size : pgno*page_size])
+    usable  = page_size - reserved
+    max_loc = usable - 35
+    min_loc = ((usable - 12) * 32) // 255 - 23
+    local   = size if size &lt;= max_loc else (min_loc + (size - min_loc) % (usable - 4))
+    out     = bytearray(page[start : start + local])
+    if size &lt;= local:
+        return bytes(out)
+    ovfl = int.from_bytes(page[start + local : start + local + 4], "big")
+    rem  = size - local
+    while ovfl and rem &gt; 0:
+        op   = overlay.get(ovfl, db[(ovfl-1)*page_size : ovfl*page_size])
+        nxt  = int.from_bytes(op[:4], "big")
+        ch   = op[4 : 4 + min(rem, usable-4)]
+        out.extend(ch); rem -= len(ch); ovfl = nxt
+    return bytes(out)
+
+def iter_records(db, page_size, overlay, root, reserved):
+    stack = [root]
+    while stack:
+        pgno = stack.pop()
+        page = overlay.get(pgno, db[(pgno-1)*page_size : pgno*page_size])
+        base = 100 if pgno == 1 else 0
+        pt   = page[base]
+        nc   = int.from_bytes(page[base+3:base+5], "big")
+        pb   = base + (12 if pt == 0x05 else 8)
+        if pt == 0x05:
+            rm = int.from_bytes(page[base+8:base+12], "big")
+            for i in range(nc):
+                off  = int.from_bytes(page[pb+2*i:pb+2*i+2], "big")
+                stack.append(int.from_bytes(page[off:off+4], "big"))
+            if rm: stack.append(rm)
+        elif pt == 0x0d:
+            for i in range(nc):
+                off  = int.from_bytes(page[pb+2*i:pb+2*i+2], "big")
+                sz, p = varint(page, off)
+                rid, p = varint(page, p)
+                pl   = read_payload(db, page_size, overlay, pgno, sz, p, reserved)
+                yield rid, parse_record(pl)
+
+# ── step 1: parse security.xml ───────────────────────────────────────────
+
+def parse_prefs():
+    root = ET.parse(CASE / "shared_prefs/security.xml").getroot()
+    kv   = {}
+    for ch in root:
+        n = ch.attrib.get("name")
+        if ch.tag == "string": kv[n] = ch.text or ""
+        elif ch.tag == "int":  kv[n] = int(ch.attrib["value"])
+    return base64.b64decode(kv["salt_b64"]), kv["pbkdf2_iter"], kv["dk_len"]
+
+# ── step 2: extract pepper from libnative.so ─────────────────────────────
+
+def get_pepper():
+    adir = Path("/tmp/_rocsc_apk")
+    adir.mkdir(exist_ok=True)
+    subprocess.run(["unzip","-qo", str(APK), "-d", str(adir)], check=True)
+    so   = next(adir.rglob("libnative.so"))
+    hits = [l for l in subprocess.check_output(["strings", str(so)],
+             errors="ignore", text=True).splitlines()
+            if "::" in l and ("pepper" in l.lower() or "rocsc" in l.lower())]
+    if not hits:
+        raise RuntimeError("pepper not found in libnative.so")
+    return sorted(hits, key=len, reverse=True)[0]
+
+# ── step 3: WAL parsing ───────────────────────────────────────────────────
+
+def parse_wal(wal, page_size):
+    if len(wal) &lt; 32 or wal[:4] not in (b'\x37\x7f\x06\x82', b'\x37\x7f\x06\x83'):
+        raise RuntimeError("invalid WAL magic")
+    frames, off = [], 32
+    while off + 24 + page_size &lt;= len(wal):
+        pgno   = int.from_bytes(wal[off:off+4],   "big")
+        db_sz  = int.from_bytes(wal[off+4:off+8], "big")
+        page   = wal[off+24 : off+24+page_size]
+        frames.append((pgno, db_sz, page))
+        off   += 24 + page_size
+    last_commit = max((i for i,(p,d,pg) in enumerate(frames) if d != 0), default=-1)
+    committed, uncommitted = {}, {}
+    for i, (pgno, _, page) in enumerate(frames):
+        (committed if i &lt;= last_commit else uncommitted)[pgno] = page
+    return committed, uncommitted
+
+# ── step 4: nonce derivation ──────────────────────────────────────────────
+
+def nonce_from_ts(ts):
+    b = ts.to_bytes(8, "little").ljust(16, b"\x00")
+    return hashlib.sha256(b"no" + b).digest()[:12]
+
+# ── main ──────────────────────────────────────────────────────────────────
+
+def main():
+    salt, iters, dklen = parse_prefs()
+    pepper = get_pepper()
+    print(f"[+] pepper: {pepper}")
+
+    key = hashlib.pbkdf2_hmac("sha256",
+              f"{PIN}:{pepper}".encode(), salt, iters, dklen)
+
+    db_bytes  = (CASE / "databases/notes.db").read_bytes()
+    wal_bytes = (CASE / "databases/notes.db-wal").read_bytes()
+
+    page_size = int.from_bytes(db_bytes[16:18], "big") or 65536
+    reserved  = db_bytes[20]
+
+    committed, uncommitted = parse_wal(wal_bytes, page_size)
+    overlay  = {**committed, **uncommitted}
+    print(f"[+] WAL: {len(committed)} committed, {len(uncommitted)} uncommitted pages")
+
+    # find notes root page from sqlite_master
+    root_pg = None
+    for _, cols in iter_records(db_bytes, page_size, overlay, 1, reserved):
+        if len(cols) &gt;= 5 and cols[0] == "table" and cols[1] == "notes":
+            root_pg = cols[3]; break
+    if root_pg is None:
+        raise RuntimeError("notes table not found")
+    print(f"[+] notes root page: {root_pg}")
+
+    committed_ids = {rid for rid,_ in
+                     iter_records(db_bytes, page_size, committed, root_pg, reserved)}
+
+    for rid, cols in iter_records(db_bytes, page_size, uncommitted, root_pg, reserved):
+        if rid in committed_ids: continue
+        blob = next((c for c in reversed(cols) if isinstance(c,(bytes,bytearray))), None)
+        ts   = next((c for c in cols if isinstance(c,int) and c &gt; 1_000_000_000_000), None)
+        if blob is None or ts is None: continue
+        nonce = nonce_from_ts(ts)
+        try:
+            pt  = AES.new(key, AES.MODE_GCM, nonce=nonce).decrypt_and_verify(blob[:-16], blob[-16:])
+            obj = msgpack.unpackb(pt, raw=False)
+            if "body" in obj:
+                print(f"[+] FLAG: {obj['body']}")
+                return
+        except Exception:
+            pass
+    print("[-] flag not found")
+
+if __name__ == "__main__":
+    main()</code></pre>
         </section>
       </article>
 

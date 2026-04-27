@@ -175,14 +175,62 @@
             <li><a href="#stage2">Stage 2 — native attestation via JNI callback (FLAG 2)</a></li>
             <li><a href="#stage3">Stage 3 — anti-debug bypass + encrypted locker (FLAG 3)</a></li>
             <li><a href="#stage4">Stage 4 — HMAC proof + local verifier (FLAG 4)</a></li>
+            <li><a href="#solve">Stage 4 solve script</a></li>
           </ul>
         </nav>
 
         <section id="stage1">
           <h2>Stage 1 — dispatch code → session token (FLAG 1)</h2>
-          <p>The first screen asks for a "dispatch code". Type the wrong thing and you get <em>Invalid dispatch code. Contact dispatch.</em> — generic, no hints at all. The validation logic is in a heavily obfuscated Kotlin function that applies a series of deterministic transforms: normalization, reversal, XOR with a lookup table, and a checksum comparison against a hardcoded digest.</p>
-          <p>There's no plain hash to reverse-lookup. I traced through the transform chain statically and worked backwards to find an input that produces the expected digest. Alternatively, intercepting the validation function with Frida and brute-forcing the PIN space works too — it's small enough that it completes in seconds.</p>
-          <p>Once I had the right dispatch code, the session still wasn't just a flag sitting in plaintext. The code is used as a KDF input to decrypt <code>blob1</code> — a byte array embedded in the APK. Out comes a session token, which is FLAG 1, and which also gets stored in <code>EncryptedSharedPreferences</code> as the live session credential.</p>
+          <p>The first screen asks for a "dispatch code" (hint format: <code>DRV-XXX-YYYY</code>). Decompiling with jadx gives you <code>DispatchValidator.java</code>, and the validation logic is immediately readable:</p>
+          <pre><code>public final class DispatchValidator {
+    private static final byte[] ENCODED = {
+        0x06, 0x10, 0x14, 0x6F,
+        0x0C, 0x10, 0x7B, 0x6F,
+        0x70, 0x72, 0x70, 0x74
+    };
+
+    public final boolean validate(String input) {
+        String s = input.trim().toUpperCase();
+        if (s.length() != ENCODED.length) return false;
+        for (int i = 0; i &lt; ENCODED.length; i++) {
+            if (s.charAt(i) != ((ENCODED[i] &amp; 0xFF) ^ 66)) return false;  // 66 = 0x42
+        }
+        return true;
+    }
+}</code></pre>
+          <p>The formula is right there: each character of the input must equal <code>(ENCODED[i] &amp; 0xFF) ^ 0x42</code>. It's directly reversible — apply the same XOR to each byte:</p>
+          <pre><code>ENCODED = [0x06, 0x10, 0x14, 0x6F, 0x0C, 0x10, 0x7B, 0x6F, 0x70, 0x72, 0x70, 0x74]
+print(''.join(chr(b ^ 0x42) for b in ENCODED))
+# → DRV-NR9-2026</code></pre>
+          <p>The dispatch code is <strong>DRV-NR9-2026</strong>.</p>
+          <p>Knowing the code isn't enough — FLAG 1 isn't a plain string. The app runs <code>BlobDecryptor.decryptBlob(blob1, key)</code>, where the key is <code>SHA-256("DRV-NR9-2026" + "|courier|salt|2026")</code>. The result — the session token — is stored in <code>EncryptedSharedPreferences</code> and is also visible in the Diagnostics screen after activation. I captured it at the decryption call with Frida:</p>
+          <pre><code>Java.perform(() => {
+    // option 1: bypass validation — any input will activate
+    const DV = Java.use("com.courierdrop.app.crypto.DispatchValidator");
+    DV.validate.implementation = function(code) {
+        console.log("[*] input:", code, "→ bypassed");
+        return true;
+    };
+
+    // capture FLAG1 from the blob decryption output
+    const BD = Java.use("com.courierdrop.app.crypto.BlobDecryptor");
+    BD.decryptBlob.implementation = function(blob, key) {
+        const result = this.decryptBlob(blob, key);
+        if (result !== null)
+            console.log("[FLAG1]", Java.use("java.lang.String").$new(result, "UTF-8"));
+        return result;
+    };
+
+    // backup: hook SessionManager to catch the saved value
+    const SM = Java.use("com.courierdrop.app.data.SessionManager");
+    SM.saveSession.implementation = function(session) {
+        console.log("[FLAG1] session_id:", session.sessionId.value());
+        return this.saveSession(session);
+    };
+});</code></pre>
+          <div class="note">
+            jadx renames packages that clash with Java reserved words. The <code>native</code> package shows up as <code>p004native</code> in jadx output (the number varies by version). When writing Frida hooks, use the <strong>real class name</strong> from the APK, not the jadx alias — find it in the <code>d2</code> field of the <code>@Metadata</code> Kotlin annotation: <code>Lcom/courierdrop/app/native/NativeAttestation;</code>.
+          </div>
           <div class="note">
             Everything downstream requires a valid session. The app checks for it on every screen and rejects you silently if it's missing or expired — so there's no way to skip this stage.
           </div>
@@ -190,51 +238,146 @@
 
         <section id="stage2">
           <h2>Stage 2 — native attestation via JNI callback (FLAG 2)</h2>
-          <p>Stage 2 is the package scan flow. The UI shows a progress indicator — "Validating label…", "Checking chain-of-custody signature…", "Device attestation in progress…" — and then marks the stop as Verified. FLAG 2 never appears on screen, which was the first hint something interesting was happening under the surface.</p>
-          <p>What actually happens: the app calls into <code>libnative.so</code> with the session token from Stage 1. The native side derives a key from that token, decrypts <code>blob2</code> stored in <code>.rodata</code>, and produces an <em>attestation</em> string. That attestation is FLAG 2.</p>
-          <p>The issue is that it's not returned as a return value. The native code calls back into Java via JNI: either <code>onScanSuccess(attestation)</code> on a callback interface, or directly into a repository class like <code>RouteRepository.saveAttestation(attestation)</code>. The UI just shows "Verified" and the flag disappears into memory. The Diagnostics screen shows only a short truncated hash of the attestation — not the full value — so reading it from there won't work.</p>
-          <p>Two good interception points with Frida:</p>
-          <ul>
-            <li>Hook the Java method that receives the callback — read the string argument directly</li>
-            <li>Hook <code>NewStringUTF</code> in the JNI bridge — every string the native side creates passes through here</li>
-          </ul>
-          <pre><code>Java.perform(() =&gt; {
-    // option 1: hook the Java callback
-    const RouteRepo = Java.use("com.courierdrop.RouteRepository");
-    RouteRepo.saveAttestation.implementation = function(att) {
-        console.log("[*] attestation:", att);
+          <p>Stage 2 is the package scan flow. The UI shows a progress indicator — "Validating label…", "Checking chain-of-custody signature…", "Device attestation in progress…" — and marks the stop as Verified. FLAG 2 never appears on screen.</p>
+          <p>What actually happens: <code>NativeAttestation.processScan(sessionId, awbId)</code> runs in C++ via JNI. The native side derives a key from the session token (<code>SHA-256(session_id + "|attest|salt|2026")</code>), decrypts <code>blob2</code> from <code>.rodata</code>, and sends the attestation string back through a JNI <code>CallVoidMethod</code> to <code>onScanSuccess(attestation)</code>. The Diagnostics screen shows only a short truncated hash of it — not the full value.</p>
+          <p>The class lives in the <code>native</code> package (<code>p004native</code> in jadx). For Frida, use the real name from the APK metadata. Two solid interception points:</p>
+          <pre><code>Java.perform(() => {
+    // option 1: hook the Java callback that receives the attestation
+    // real class name: com.courierdrop.app.native.NativeAttestation
+    // (jadx shows it under p004native — use the real name for Java.use())
+    const NA = Java.use("com.courierdrop.app.native.NativeAttestation");
+    NA.onScanSuccess.implementation = function(attestation) {
+        console.log("[FLAG2] onScanSuccess:", attestation);
+        return this.onScanSuccess(attestation);
+    };
+
+    // option 2: hook the repository save
+    const RR = Java.use("com.courierdrop.app.data.RouteRepository");
+    RR.saveAttestation.implementation = function(att) {
+        console.log("[FLAG2] saveAttestation:", att);
         return this.saveAttestation(att);
     };
 });</code></pre>
+          <p>Alternative at the JNI boundary: hook <code>NewStringUTF</code> — every string the native side creates passes through it, so you'll see the attestation the moment it's constructed, before it even reaches the Java callback.</p>
         </section>
 
         <section id="stage3">
           <h2>Stage 3 — anti-debug bypass + encrypted locker (FLAG 3)</h2>
-          <p>The "Secure Notes / Locker" section contains sensitive delivery instructions for each stop. Before showing anything real, the app runs <code>Guard.check()</code>. If that returns bad news, you get sanitized placeholder notes — plausible-looking but completely useless.</p>
-          <p><code>Guard.check()</code> looks for:</p>
-          <ul>
-            <li><code>Debug.isDebuggerConnected()</code></li>
-            <li><code>TracerPid</code> in <code>/proc/self/status</code></li>
-            <li>Frida-related substrings in <code>/proc/self/maps</code></li>
-          </ul>
-          <p>I bypassed it by patching the smali. Decompile with apktool, find the branch that gates on the guard result, flip it, rebuild and sign. Once the guard was removed, <code>key3</code> is derived from the Stage 2 attestation (FLAG 2 feeds directly here), <code>blob3</code> is decrypted, and the locker receipt — FLAG 3 — shows up in the Diagnostics section.</p>
-          <p>If patching smali isn't the preferred approach, intercepting <code>Guard.check</code> at runtime to always return <code>true</code> works as well — just make sure Frida itself doesn't trigger the detection before the hook is in place.</p>
+          <p>The "Secure Notes / Locker" section runs <code>Guard.check()</code> before showing anything real. The guard checks three things:</p>
+          <pre><code>public static final boolean check() {
+    return !isDebuggerConnected()   // Debug.isDebuggerConnected()
+        &amp;&amp; !hasTracerPid()          // reads TracerPid from /proc/self/status
+        &amp;&amp; !hasFridaMaps();         // scans /proc/self/maps for "frida-agent"
+}</code></pre>
+          <p>With Frida attached, <code>hasFridaMaps()</code> fires and the guard returns <code>false</code>, so you get plausible-looking placeholder notes instead of the real content. The simplest bypass — hook <code>Guard.check()</code> to always return <code>true</code>:</p>
+          <pre><code>Java.perform(() => {
+    const Guard = Java.use("com.courierdrop.app.crypto.Guard");
+    Guard.check.implementation = function() {
+        console.log("[Stage3] Guard bypassed");
+        return true;
+    };
+});</code></pre>
+          <p>Once the guard passes, <code>SecureLockerActivity</code> reads the Stage 2 attestation from <code>RouteRepository</code>, derives <code>key3 = SHA-256(FLAG2 + "|locker|salt|2026")</code>, decrypts <code>blob3</code>, and FLAG 3 appears both in the Frida output and as a visible note in the Locker UI.</p>
+          <p>Run Stages 2 and 3 in the same Frida session — the locker reads <code>RouteRepository.getAttestation()</code>, which is only populated after Stage 2. If you attach a fresh session for Stage 3, that in-memory value is gone and blob3 decryption fails silently with sanitized notes.</p>
+          <pre><code>frida -U -f com.courierdrop.app \
+  -l stage2_native.js \
+  -l stage3_guard_bypass.js</code></pre>
+          <ol>
+            <li>Navigate to a stop → tap <strong>Simulate Scan</strong> → FLAG 2 appears in output</li>
+            <li>Navigate to <strong>Locker</strong> tab → FLAG 3 appears in output and in the UI</li>
+          </ol>
+          <p>Patching the smali (flip the branch in <code>SecureLockerActivity</code> that gates on the guard result, rebuild and re-sign with apktool) works too if you prefer a static approach — the Frida route is faster in practice.</p>
         </section>
 
         <section id="stage4">
           <h2>Stage 4 — HMAC proof + local verifier (FLAG 4)</h2>
-          <p>The final screen is "Complete Delivery". Fill in the form fields and the app constructs a POD (proof of delivery) JSON payload, signs it, and sends it to a local HTTP server that the app spins up itself on a random <code>127.0.0.1</code> port.</p>
-          <p>The signing works like this:</p>
-          <pre><code>nonce = random 16 bytes
-canonical = nonce || sha256(payload_json)
-K = KDF(locker_receipt)   ← FLAG 3 feeds in here
-X-Nonce: base64(nonce)
-X-Proof: base64(HMAC-SHA256(K, canonical))</code></pre>
-          <p>The local verifier (<code>POST /verify</code>) reconstructs the canonical payload, recomputes the HMAC, compares, and — if everything matches — responds with a receipt JSON containing <code>audit_token</code>. That's FLAG 4.</p>
-          <p>Two ways to get there. The first: intercept <code>OkHttp</code>'s network layer, capture the full request including headers, and replay it to the local server port (find the port by intercepting the server startup or reading it from Diagnostics). The more thorough path: reverse the key derivation from <code>locker_receipt</code>, build the canonical payload manually, sign it, and send your own POST. I went with the second approach — more work, but more complete.</p>
+          <p>The final screen is "Complete Delivery". The app constructs a POD (proof-of-delivery) JSON payload, signs it with HMAC, and sends it to a local HTTP verifier that spins up on a random <code>127.0.0.1</code> port. The port is visible in Diagnostics after Stage 1.</p>
+          <p>The signing scheme, reversed from <code>DeliveryActivity.java</code>:</p>
+          <pre><code># K_pod = SHA-256(FLAG3 + "|pod|hmac|2026")
+K_pod = hashlib.sha256((flag3 + "|pod|hmac|2026").encode()).digest()
+
+nonce = os.urandom(16)
+canonical = nonce + hashlib.sha256(payload_json.encode()).digest()
+proof = hmac.new(K_pod, canonical, hashlib.sha256).digest()
+
+# POST http://127.0.0.1:PORT/verify
+# X-Nonce: base64(nonce)
+# X-Proof: base64(proof)
+# Content-Type: application/json</code></pre>
+          <p>The local verifier reconstructs the canonical payload, recomputes the HMAC, and — if it matches — returns a JSON receipt with <code>audit_token</code>. That's FLAG 4. The <code>audit_token</code> in the server is stored XOR-encrypted with a key derived from FLAG 3, so there's no static path to it without completing Stage 3 first.</p>
+          <p>The verifier runs inside the emulator. Before sending anything, forward the port to the host:</p>
+          <pre><code>adb forward tcp:PORT tcp:PORT</code></pre>
+          <p>Then build and send the proof — either with the <a href="#solve">solve script below</a>, or by tapping "Complete Delivery" in the app and hooking <code>showSuccess()</code> with Frida to read the full response JSON directly.</p>
           <div class="note">
-            Each flag is derived from the previous one: dispatch code → session token → attestation → locker receipt → audit token. Break one link and everything after it stays locked. The chain is the whole point of the challenge.
+            The full flag chain: dispatch code → session token (FLAG 1) → attestation (FLAG 2) → locker receipt (FLAG 3) → audit token (FLAG 4). Each key is derived from the previous flag — there's no way to skip a stage.
           </div>
+        </section>
+
+        <section id="solve">
+          <h2>Stage 4 solve script</h2>
+          <p>Reproduces the exact HMAC construction from <code>DeliveryActivity.java</code> and sends the request directly to the local verifier. Get the port from Diagnostics and run with the three flags from the previous stages.</p>
+          <pre><code>#!/usr/bin/env python3
+"""
+CourierDrop — Stage 4 Solver
+Usage:
+    adb forward tcp:PORT tcp:PORT
+    python3 solve_stage4.py --port PORT --flag1 FLAG1 --flag2 FLAG2 --flag3 FLAG3
+"""
+
+import argparse, base64, hashlib, hmac as hmac_module, json, os, socket
+
+def sha256(data: bytes) -> bytes:
+    return hashlib.sha256(data).digest()
+
+def derive_key(secret: str, salt: str) -> bytes:
+    # matches BlobDecryptor.deriveKey(): SHA-256(secret + "|" + salt)
+    return hashlib.sha256(secret.encode() + b"|" + salt.encode()).digest()
+
+def build_request(flag1, flag2, flag3):
+    payload = json.dumps({
+        "session_id":      flag1,
+        "driver_id":       "DRV-0047",
+        "recipient":       "CTFSolver",
+        "delivery_method": "FRONT_DESK",
+        "attestation":     flag2,
+        "timestamp":       1700000000000
+    }, separators=(',', ':'))
+
+    nonce   = os.urandom(16)
+    k_pod   = derive_key(flag3, "pod|hmac|2026")
+    proof   = hmac_module.new(k_pod, nonce + sha256(payload.encode()), hashlib.sha256).digest()
+    return payload, base64.b64encode(nonce).decode(), base64.b64encode(proof).decode()
+
+def post_verify(port, payload, nonce_b64, proof_b64):
+    body = payload.encode()
+    req  = (
+        f"POST /verify HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+        f"Content-Type: application/json\r\nContent-Length: {len(body)}\r\n"
+        f"X-Nonce: {nonce_b64}\r\nX-Proof: {proof_b64}\r\nConnection: close\r\n\r\n"
+    ).encode() + body
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
+        s.sendall(req)
+        resp = b""
+        while chunk := s.recv(4096):
+            resp += chunk
+    sep  = b"\r\n\r\n" if b"\r\n\r\n" in resp else b"\n\n"
+    body = resp.partition(sep)[2]
+    return json.loads(body.decode().strip())
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--port",  required=True, type=int)
+    p.add_argument("--flag1", required=True)
+    p.add_argument("--flag2", required=True)
+    p.add_argument("--flag3", required=True)
+    args = p.parse_args()
+
+    payload, nonce_b64, proof_b64 = build_request(args.flag1, args.flag2, args.flag3)
+    result = post_verify(args.port, payload, nonce_b64, proof_b64)
+    print("FLAG4:", result.get("audit_token", result))
+
+if __name__ == "__main__":
+    main()</code></pre>
         </section>
       </article>
 
