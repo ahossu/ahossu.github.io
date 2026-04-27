@@ -292,7 +292,7 @@ rtw_get_ie(pframe + ..., id, &len,
 
         <section id="patches">
           <h2>9. Patches</h2>
-          <p>Three series went to the staging mailing list. Series 1 covered <code>OnAuthClient()</code> heap overflow; series 2 (v2) reworked the frame length checks after Dan Carpenter's review; series 3 (v2) fixed the remaining IE loops and the WPA IE overflow, with Reviewed-by from Luka Gejak.</p>
+          <p>Three series went to the staging mailing list. Series 1 (v6) covered both the <code>OnAuthClient()</code> heap overflow and the missing frame length guards — the frame length patch followed after Dan Carpenter's review of the overflow fix. Series 2 (v2) fixed the <code>HT_caps_handler()</code> OOB write and the <code>OnAssocRsp()</code> IE loop OOB read. Series 3 (v3) fixed the remaining IE parsing loops in <code>update_beacon_info()</code>, <code>issue_assocreq()</code>, and <code>join_cmd_hdl()</code>, plus the one-byte WPA IE overflow in <code>rtw_cfg80211_set_wpa_ie()</code>, with Reviewed-by from Luka Gejak.</p>
           <p>All changes are in <code>drivers/staging/rtl8723bs/</code>:</p>
           <ul>
             <li><code>core/rtw_mlme_ext.c</code> — <code>OnAuthClient()</code>: IE length check, frame length guards</li>
