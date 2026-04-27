@@ -173,7 +173,7 @@
           <p class="post-toc-title">On this page</p>
           <ul>
             <li><a href="#overview">1. Malware overview</a></li>
-            <li><a href="#pcap">2. PCAP: extracting ts_window and dns_last_ip</a></li>
+            <li><a href="#pcap">2. PCAP: extracting ts_window</a></li>
             <li><a href="#memdump">3. Memory dump: vault mapping and env vars</a></li>
             <li><a href="#vault">4. Vault structure</a></li>
             <li><a href="#kdf">5. Key derivation chain</a></li>
@@ -205,7 +205,7 @@
         </section>
 
         <section id="pcap">
-          <h2>2. PCAP: extracting ts_window and dns_last_ip</h2>
+          <h2>2. PCAP: extracting ts_window</h2>
           <p>The HTTP POST to <code>/beacon</code> contains a <code>ts</code> field — a windowed Unix timestamp:</p>
           <pre><code>ts_window = floor(epoch_seconds / 600) * 600</code></pre>
           <p>I read it directly from the POST body. With tshark:</p>
@@ -217,10 +217,6 @@ tshark -r capture.pcap -Y "http.request.method == POST" \
 # or grep the raw value
 tshark -r capture.pcap -Y "http.request.method == POST" \
     -T fields -e http.file_data | grep -oP 'ts=\K[0-9]+'</code></pre>
-          <p>The DNS beacon fires three A-record queries right at startup. The IP from the <em>last</em> DNS response is used in the HMAC proof (<code>dns_last_ip</code>). I pulled the final A response from the PCAP — it's 4 bytes in network byte order (big-endian), used as-is in the HMAC:</p>
-          <pre><code># get the last DNS A response answer address
-tshark -r capture.pcap -Y "dns.flags.response == 1 and dns.a" \
-    -T fields -e dns.a | tail -1</code></pre>
         </section>
 
         <section id="memdump">
