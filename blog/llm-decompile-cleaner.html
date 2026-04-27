@@ -193,7 +193,7 @@
 
         <section id="pipeline">
           <h2>3. How it works</h2>
-          <p>The input is a raw C dump from any decompiler. The only requirement is that each function block starts with a comment marker — the default format is <code>/* ---- Function: foo ---- */</code>, which matches what IDA's Hex-Rays pseudocode export and Ghidra's C output scripts produce. The regex <code>_SPLIT_RE</code> controls the exact pattern and can be adjusted for other formats.</p>
+          <p>The input is a raw C dump from any decompiler. The only requirement is that each function block starts with a comment marker — the default format is <code>/* ---- Function: foo ---- */</code>, which is what the bundled IDA and Ghidra export scripts produce. The regex <code>_SPLIT_RE</code> controls the exact pattern and can be adjusted for other formats.</p>
           <p>Once split, each function is sent as a separate inference request. Sending functions individually rather than dumping the whole file into a single prompt avoids hitting the model's context window limit and gives cleaner results per function — the model can focus on one function at a time without 50 unrelated ones in the context.</p>
           <p>After the model responds, a post-processing pass runs before the output is written:</p>
           <ul>
