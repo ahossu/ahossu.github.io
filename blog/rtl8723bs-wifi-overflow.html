@@ -152,7 +152,7 @@
         <header class="post-header">
           <h1>rtl8723bs — WiFi Heap Overflow in the Linux Kernel</h1>
           <p class="post-subtitle">
-            A heap overflow in the Linux staging driver for the rtl8723bs WiFi chip, exploitable by any rogue AP within radio range. No authentication required. The bug has been sitting in the kernel since 2015.
+            A heap overflow in the Linux staging driver for the rtl8723bs WiFi chip, exploitable by any rogue AP within radio range. No authentication required. The bug has been sitting in the kernel since 2017.
           </p>
           <p class="post-meta">
             <span>Linux Kernel • Vulnerability Research</span>
@@ -184,7 +184,7 @@
 
         <section id="background">
           <h2>1. Background</h2>
-          <p>The rtl8723bs driver handles the Realtek RTL8723BS SDIO WiFi/Bluetooth combo chip, which ships in a wide range of embedded Linux devices — tablets, single-board computers, industrial controllers. It was added to the kernel's staging tree in 2015 (commit <code>554c0a3abf21</code>) and has been there ever since.</p>
+          <p>The rtl8723bs driver handles the Realtek RTL8723BS SDIO WiFi/Bluetooth combo chip, which ships in a wide range of embedded Linux devices — tablets, single-board computers, industrial controllers. It was added to the kernel's staging tree in 2017 (commit <code>554c0a3abf21</code>) and has been there ever since.</p>
           <p>I found the primary bug — a heap overflow in <code>OnAuthClient()</code> — while reading through the driver's 802.11 management frame handling code. From there, a reviewer pointed out that the same function was also missing basic frame length guards, which led to a second patch. The same IE parsing pattern repeated across the driver, so I kept going. Three patch series in total: the first two cover <code>OnAuthClient()</code> and the IE handler OOBs already visible in the association path; the third adds fixes for four more functions — <code>update_beacon_info()</code>, <code>issue_assocreq()</code>, <code>join_cmd_hdl()</code>, and a separate one-byte heap overflow in <code>rtw_cfg80211_set_wpa_ie()</code> reachable via nl80211.</p>
         </section>
 
@@ -223,13 +223,8 @@ memcpy(pmlmeinfo->chg_txt, p + 2, len);  /* len = raw IE length byte, 0-255 */</
         <section id="length-checks">
           <h2>4. Missing frame length checks</h2>
           <p>After I submitted the first patch, Dan Carpenter pointed out that <code>OnAuthClient()</code> was also missing basic frame length validation. Two problems:</p>
-          <p>First, <code>get_da(pframe)</code> reads bytes 4–9 of the frame (the destination MAC address), and <code>GetPrivacy(pframe)</code> reads the Frame Control field at bytes 0–1. Both are called before any check that <code>pkt_len</code> is at least <code>WLAN_HDR_A3_LEN</code> (24 bytes).</p>
-          <p>Second, when <code>pkt_len &lt; WLAN_HDR_A3_LEN + _AUTH_IE_OFFSET_</code> (which is 30 bytes), the length computation for the <code>rtw_get_ie()</code> call wraps:</p>
-          <pre><code>/* pkt_len and WLAN_HDR_A3_LEN are both 'uint' (unsigned) */
-/* If pkt_len < 30: this wraps to a value near 4 GB */
-rtw_get_ie(pframe + ..., id, &len,
-           pkt_len - WLAN_HDR_A3_LEN - _AUTH_IE_OFFSET_);</code></pre>
-          <p><code>rtw_get_ie()</code> then scans well past the end of the frame buffer with that ~4 GB limit. The fix adds two guards: one before the first <code>pframe</code> access, and a second after computing <code>offset</code> (0 or 4) to cover the <code>seq</code>/<code>status</code> reads and prevent the wrap:</p>
+          <p>First, <code>get_da(pframe)</code> inspects the ToDs/FrDs bits in Frame Control (bytes 0–1) and returns either Addr1 (bytes 4–9) or Addr3 (bytes 16–21). <code>GetPrivacy(pframe)</code> also reads the Frame Control field. Both are called before any check that <code>pkt_len</code> is at least <code>WLAN_HDR_A3_LEN</code> (24 bytes), so a short frame causes an out-of-bounds read.</p>
+          <p>Second, the <code>seq</code> and <code>status</code> fields are read at <code>pframe + WLAN_HDR_A3_LEN + offset + 2</code> and <code>+4</code> with no check that those offsets are within the frame. The fix adds two guards: one before the first <code>pframe</code> access, and a second after computing <code>offset</code> (0 for open-system, 4 for WEP) to cover the <code>seq</code>/<code>status</code> reads:</p>
           <pre><code>+if (pkt_len < WLAN_HDR_A3_LEN)
 +    goto authclnt_fail;
 
@@ -250,10 +245,10 @@ rtw_get_ie(pframe + ..., id, &len,
     HT_caps.u.HT_cap[i] = pIE->data[i];
     ...
 }</code></pre>
-          <p>Since <code>pIE-&gt;length</code> is a raw byte from the received frame (0–255), a malicious AP can cause up to 229 bytes of out-of-bounds writes into adjacent fields of <code>struct mlme_ext_info</code>. The fix truncates the iteration count with <code>min_t()</code> instead of rejecting the IE outright — APs that send an oversized HT Caps element are handled gracefully rather than causing a connection failure:</p>
+          <p>Since <code>pIE-&gt;length</code> is a raw byte from the received frame (0–255), a malicious AP can cause up to 229 bytes of out-of-bounds writes into adjacent fields of <code>struct mlme_ext_info</code>. The fix truncates the iteration count with <code>umin()</code> instead of rejecting the IE outright — APs that send an oversized HT Caps element are handled gracefully rather than causing a connection failure:</p>
           <pre><code>-for (i = 0; i < (pIE->length); i++) {
-+for (i = 0; i < min_t(unsigned int, pIE->length,
-+                       sizeof(pmlmeinfo->HT_caps.u.HT_cap)); i++) {</code></pre>
++for (i = 0; i < umin(pIE->length,
++                      sizeof(pmlmeinfo->HT_caps.u.HT_cap)); i++) {</code></pre>
         </section>
 
         <section id="assocrsp">
@@ -292,7 +287,7 @@ rtw_get_ie(pframe + ..., id, &len,
 
         <section id="patches">
           <h2>9. Patches</h2>
-          <p>Three series went to the staging mailing list. Series 1 (v6) covered both the <code>OnAuthClient()</code> heap overflow and the missing frame length guards — the frame length patch followed after Dan Carpenter's review of the overflow fix. Series 2 (v2) fixed the <code>HT_caps_handler()</code> OOB write and the <code>OnAssocRsp()</code> IE loop OOB read. Series 3 (v3) fixed the remaining IE parsing loops in <code>update_beacon_info()</code>, <code>issue_assocreq()</code>, and <code>join_cmd_hdl()</code>, plus the one-byte WPA IE overflow in <code>rtw_cfg80211_set_wpa_ie()</code>, with Reviewed-by from Luka Gejak.</p>
+          <p>Three series went to the staging mailing list. Series 1 (v7) covered both the <code>OnAuthClient()</code> heap overflow and the missing frame length guards — the frame length patch followed after Dan Carpenter's review of the overflow fix. Series 2 (v4) fixed the <code>HT_caps_handler()</code> OOB write and the <code>OnAssocRsp()</code> IE loop OOB read. Series 3 (v4) fixed the remaining IE parsing loops in <code>update_beacon_info()</code>, <code>issue_assocreq()</code>, and <code>join_cmd_hdl()</code>, plus the one-byte WPA IE overflow in <code>rtw_cfg80211_set_wpa_ie()</code>, with Reviewed-by from Luka Gejak.</p>
           <p>All changes are in <code>drivers/staging/rtl8723bs/</code>:</p>
           <ul>
             <li><code>core/rtw_mlme_ext.c</code> — <code>OnAuthClient()</code>: IE length check, frame length guards</li>
@@ -303,7 +298,7 @@ rtw_get_ie(pframe + ..., id, &len,
             <li><code>os_dep/ioctl_cfg80211.c</code> — <code>rtw_cfg80211_set_wpa_ie()</code>: WPA/WPA2 IE size check</li>
           </ul>
           <div class="note">
-            All of these bugs have been in the driver since the initial staging commit in 2015. The driver is still in staging as of the current kernel, so it ships in any distribution that includes the staging tree. Any device using this chip that connects to untrusted WiFi networks is exposed — the auth algorithm toggle means there is no configuration that avoids the overflow path.
+            All of these bugs have been in the driver since the initial staging commit in 2017. The driver is still in staging as of the current kernel, so it ships in any distribution that includes the staging tree. Any device using this chip that connects to untrusted WiFi networks is exposed — the auth algorithm toggle means there is no configuration that avoids the overflow path.
           </div>
         </section>
       </article>
