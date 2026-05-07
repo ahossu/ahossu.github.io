@@ -191,6 +191,44 @@
           <div class="posts-list">
 
 
+            <a class="post-card" href="wraithstep">
+              <h2 class="post-title">WRAITHSTEP (ROCSC Finals 2026) — Linux Implant Forensics</h2>
+              <p class="post-meta">
+                <span>Forensics • Malware Analysis</span>
+                <span>ROCSC Finals 2026</span>
+                <span>Challenge by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Linux</span>
+                <span class="tag">udev</span>
+                <span class="tag">PAM</span>
+                <span class="tag">RC4</span>
+                <span class="tag">DNS Exfiltration</span>
+              </div>
+              <p class="post-excerpt">
+                Three-stage Linux forensics challenge: trace a fileless dropper running from a <code>memfd_create</code> file descriptor back to a udev <code>/dev/random</code> persistence rule, reverse the RC4-obfuscated PAM backdoor that replaced <code>pam_pkcs11.so</code>, and decode base32-encoded credentials tunneled over DNS.
+              </p>
+            </a>
+
+            <a class="post-card" href="winsensor">
+              <h2 class="post-title">WINSENSOR (ROCSC Finals 2026) — Hidden IOCTL in a Windows Kernel Driver</h2>
+              <p class="post-meta">
+                <span>pwn • Windows Kernel • Reverse Engineering</span>
+                <span>ROCSC Finals 2026</span>
+                <span>Challenge by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Windows Kernel</span>
+                <span class="tag">IOCTL</span>
+                <span class="tag">BYOVD</span>
+                <span class="tag">IDA / Ghidra</span>
+                <span class="tag">Named Pipe</span>
+              </div>
+              <p class="post-excerpt">
+                Stripped x64 kernel driver with three IOCTL handlers — two documented, one hidden. The undocumented handler writes directly to the driver's auth variable with no privilege check. Find function code <code>0x8800001C</code>, recover <code>ADMIN_TOKEN = 0xC0FFEE1337DEAD01</code>, and exploit the same diagnostic backdoor pattern behind real BYOVD attacks.
+              </p>
+            </a>
+
             <a class="post-card" href="rtl8723bs-wifi-overflow">
               <h2 class="post-title">rtl8723bs — WiFi Heap Overflow in the Linux Kernel</h2>
               <p class="post-meta">
@@ -301,44 +339,6 @@
               </div>
               <p class="post-excerpt">
                 Courier logistics app with four chained secrets: obfuscated dispatch code, JNI callback hiding the attestation, anti-debug bypass to unlock encrypted notes, and a local HMAC verifier for the final flag.
-              </p>
-            </a>
-
-            <a class="post-card" href="wraithstep">
-              <h2 class="post-title">WRAITHSTEP (OSC Regional 2026) — Linux Implant Forensics</h2>
-              <p class="post-meta">
-                <span>Forensics • Malware Analysis</span>
-                <span>OSC Regional 2026</span>
-                <span>Challenge by Alexandru Hossu</span>
-              </p>
-              <div class="post-tags">
-                <span class="tag">Linux</span>
-                <span class="tag">udev</span>
-                <span class="tag">PAM</span>
-                <span class="tag">RC4</span>
-                <span class="tag">DNS Exfiltration</span>
-              </div>
-              <p class="post-excerpt">
-                Three-stage Linux forensics challenge: trace a fileless dropper running from a <code>memfd_create</code> file descriptor back to a udev <code>/dev/random</code> persistence rule, reverse the RC4-obfuscated PAM backdoor that replaced <code>pam_pkcs11.so</code>, and decode base32-encoded credentials tunneled over DNS.
-              </p>
-            </a>
-
-            <a class="post-card" href="winsensor">
-              <h2 class="post-title">WINSENSOR (OSC Regional 2026) — Hidden IOCTL in a Windows Kernel Driver</h2>
-              <p class="post-meta">
-                <span>pwn • Windows Kernel • Reverse Engineering</span>
-                <span>OSC Regional 2026</span>
-                <span>Challenge by Alexandru Hossu</span>
-              </p>
-              <div class="post-tags">
-                <span class="tag">Windows Kernel</span>
-                <span class="tag">IOCTL</span>
-                <span class="tag">BYOVD</span>
-                <span class="tag">IDA / Ghidra</span>
-                <span class="tag">Named Pipe</span>
-              </div>
-              <p class="post-excerpt">
-                Stripped x64 kernel driver with three IOCTL handlers — two documented, one hidden. The undocumented handler writes directly to the driver's auth variable with no privilege check. Find function code <code>0x8800001C</code>, recover <code>ADMIN_TOKEN = 0xC0FFEE1337DEAD01</code>, and exploit the same diagnostic backdoor pattern behind real BYOVD attacks.
               </p>
             </a>
 

@@ -4,9 +4,9 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-    <title>WINSENSOR (OSC Regional 2026) — Hidden IOCTL in a Windows Kernel Driver</title>
-    <meta name="description" content="Writeup for WINSENSOR (OSC Regional 2026) — reverse a stripped x64 Windows kernel driver, find the hidden unauthenticated IOCTL that overwrites the auth variable, and write an exploit to retrieve the flag">
-    <meta property="og:title" content="WINSENSOR (OSC Regional 2026) — Hidden IOCTL in a Windows Kernel Driver" />
+    <title>WINSENSOR (ROCSC Finals 2026) — Hidden IOCTL in a Windows Kernel Driver</title>
+    <meta name="description" content="Writeup for WINSENSOR (ROCSC Finals 2026) — reverse a stripped x64 Windows kernel driver, find the hidden unauthenticated IOCTL that overwrites the auth variable, and write an exploit to retrieve the flag">
+    <meta property="og:title" content="WINSENSOR (ROCSC Finals 2026) — Hidden IOCTL in a Windows Kernel Driver" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
     <meta name="twitter:card" content="summary" />
@@ -150,13 +150,13 @@
         <p class="back-link">← <a href="index.html">Back to blog</a></p>
 
         <header class="post-header">
-          <h1>WINSENSOR (OSC Regional 2026) — Hidden IOCTL in a Windows Kernel Driver</h1>
+          <h1>WINSENSOR (ROCSC Finals 2026) — Hidden IOCTL in a Windows Kernel Driver</h1>
           <p class="post-subtitle">
             A stripped x64 Windows kernel driver with three IOCTL handlers — two documented, one not. The hidden one writes directly to the driver's auth variable with no privilege check, unlocking the flag. The pattern is exactly how BYOVD attacks work in the wild.
           </p>
           <p class="post-meta">
             <span>pwn • Windows Kernel • Reverse Engineering</span>
-            <span>OSC Regional 2026</span>
+            <span>ROCSC Finals 2026</span>
             <span>Challenge by Alexandru Hossu</span>
           </p>
           <div class="post-tags">
@@ -176,7 +176,6 @@
             <li><a href="#vuln">Step 2 — the vulnerability</a></li>
             <li><a href="#token">Step 3 — finding ADMIN_TOKEN</a></li>
             <li><a href="#exploit">Step 4 — writing the exploit</a></li>
-            <li><a href="#realworld">Why this is realistic</a></li>
           </ul>
         </nav>
 
@@ -306,15 +305,6 @@ base64 -w 0 exploit.exe
 [+] CTF{&lt;64 hex chars&gt;}</code></pre>
         </section>
 
-        <section id="realworld">
-          <h2>Why this is realistic</h2>
-          <p>BYOVD — Bring Your Own Vulnerable Driver — is an established attacker technique for bypassing kernel-level defenses. The pattern: find a legitimate, signed hardware monitoring driver with a privileged IOCTL that has no access control, load it via the official Windows driver loading mechanism (which bypasses most EDR hooks because it goes through the kernel's own code signing path), then use the exposed IOCTL to read or write arbitrary kernel memory.</p>
-          <p>RTCore64.sys, a hardware monitoring driver from Micro-Star International, has an undocumented IOCTL that allows any user-mode process to read and write arbitrary physical memory. The BlackByte ransomware group used it to terminate EDR processes from kernel memory before deploying ransomware. MSI Afterburner's driver has had similar issues. In both cases the underlying cause is the same: a diagnostic function added during development, never access-controlled, never removed before release.</p>
-          <p>The CTF strips out the full attack chain — dropping a driver, loading it, walking kernel memory structures to find and terminate protection processes — and reduces it to the core reversing problem: find the hidden function code and the magic constant. Everything else follows from those two numbers.</p>
-          <div class="note">
-            The challenge was intentionally kept at medium difficulty. The full BYOVD exploitation path requires enumerating kernel memory, finding EPROCESS/ETHREAD structures, and patching protection flags — that's a separate challenge entirely. Here the focus is purely on recognizing the diagnostic backdoor pattern in a binary and deriving the protocol from the disassembly.
-          </div>
-        </section>
       </article>
 
       <footer class="site-footer">
