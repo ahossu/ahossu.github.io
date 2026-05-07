@@ -248,7 +248,7 @@
 
 #define IOCTL_GET_VERSION   0x88000000UL
 #define IOCTL_READ_FLAG     0x88000004UL
-#define IOCTL_WRITE_TOKEN   0x8800001CUL   /* not in challenge materials -- found by reversing */
+#define IOCTL_WRITE_TOKEN   0x8800001CUL   /* found by reversing WinSensorDeviceControl() */
 
 static const uint64_t ADMIN_TOKEN = 0xC0FFEE1337DEAD01ULL;
 
