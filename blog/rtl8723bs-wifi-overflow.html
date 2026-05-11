@@ -5,7 +5,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
     <title>rtl8723bs — WiFi Heap Overflow in the Linux Kernel</title>
-    <meta name="description" content="Heap overflow and OOB read series in the rtl8723bs staging driver: OnAuthClient memcpy overflow, missing frame length guards, HT_caps_handler OOB write, OnAssocRsp IE loop OOB read">
+    <meta name="description" content="Heap overflow and OOB read series in the rtl8723bs staging driver: OnAuthClient memcpy overflow, missing frame length guards across client and AP paths, HT_caps_handler OOB write, IE loop OOB reads across seven functions">
     <meta property="og:title" content="rtl8723bs — WiFi Heap Overflow in the Linux Kernel" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
@@ -173,19 +173,20 @@
             <li><a href="#background">1. Background</a></li>
             <li><a href="#overflow">2. OnAuthClient heap overflow</a></li>
             <li><a href="#toggle">3. Auth algorithm toggle — any device is affected</a></li>
-            <li><a href="#length-checks">4. Missing frame length checks</a></li>
-            <li><a href="#ht-caps">5. HT_caps_handler OOB write</a></li>
-            <li><a href="#assocrsp">6. OnAssocRsp IE loop OOB read</a></li>
-            <li><a href="#ie-loops">7. More IE loop OOB reads — beacon and join paths</a></li>
-            <li><a href="#wpa-ie">8. rtw_cfg80211_set_wpa_ie() — WPA IE one-byte overflow (local)</a></li>
-            <li><a href="#patches">9. Patches</a></li>
+            <li><a href="#length-checks">4. Missing frame length checks — OnAuthClient</a></li>
+            <li><a href="#onauth">5. Missing frame length checks — OnAuth (AP mode)</a></li>
+            <li><a href="#ht-caps">6. HT_caps_handler OOB write</a></li>
+            <li><a href="#assocrsp">7. OnAssocRsp IE loop OOB read</a></li>
+            <li><a href="#ie-loops">8. More IE loop OOB reads — beacon, join, and WPS paths</a></li>
+            <li><a href="#wpa-ie">9. rtw_cfg80211_set_wpa_ie() — WPA IE one-byte overflow (local)</a></li>
+            <li><a href="#patches">10. Patches</a></li>
           </ul>
         </nav>
 
         <section id="background">
           <h2>1. Background</h2>
           <p>The rtl8723bs driver handles the Realtek RTL8723BS SDIO WiFi/Bluetooth combo chip, which ships in a wide range of embedded Linux devices — tablets, single-board computers, industrial controllers. It was added to the kernel's staging tree in 2017 (commit <code>554c0a3abf21</code>) and has been there ever since.</p>
-          <p>I found the primary bug — a heap overflow in <code>OnAuthClient()</code> — while reading through the driver's 802.11 management frame handling code. From there, a reviewer pointed out that the same function was also missing basic frame length guards, which led to a second patch. The same IE parsing pattern repeated across the driver, so I kept going. Three patch series in total: the first two cover <code>OnAuthClient()</code> and the IE handler OOBs already visible in the association path; the third adds fixes for four more functions — <code>update_beacon_info()</code>, <code>issue_assocreq()</code>, <code>join_cmd_hdl()</code>, and a separate one-byte heap overflow in <code>rtw_cfg80211_set_wpa_ie()</code> reachable via nl80211.</p>
+          <p>I found the primary bug — a heap overflow in <code>OnAuthClient()</code> — while reading through the driver's 802.11 management frame handling code. From there, a reviewer pointed out that the same function was also missing basic frame length guards, which led to a second patch. The same IE parsing pattern repeated across the driver, so I kept going. Three patch series in total. The first two cover the <code>OnAuthClient()</code> overflow, the client-side and AP-side frame length checks, and the IE handler OOBs in the association path. The third adds fixes for five more functions: <code>update_beacon_info()</code>, <code>bwmode_update_check()</code>, <code>issue_assocreq()</code>, <code>join_cmd_hdl()</code>, <code>rtw_get_wps_ie()</code>, and a separate one-byte heap overflow in <code>rtw_cfg80211_set_wpa_ie()</code> reachable via nl80211.</p>
         </section>
 
         <section id="overflow">
@@ -221,7 +222,7 @@ memcpy(pmlmeinfo->chg_txt, p + 2, len);  /* len = raw IE length byte, 0-255 */</
         </section>
 
         <section id="length-checks">
-          <h2>4. Missing frame length checks</h2>
+          <h2>4. Missing frame length checks — OnAuthClient</h2>
           <p>After I submitted the first patch, Dan Carpenter pointed out that <code>OnAuthClient()</code> was also missing basic frame length validation. Two problems:</p>
           <p>First, <code>get_da(pframe)</code> inspects the ToDs/FrDs bits in Frame Control (bytes 0–1) and returns either Addr1 (bytes 4–9) or Addr3 (bytes 16–21). <code>GetPrivacy(pframe)</code> also reads the Frame Control field. Both are called before any check that <code>pkt_len</code> is at least <code>WLAN_HDR_A3_LEN</code> (24 bytes), so a short frame causes an out-of-bounds read.</p>
           <p>Second, the <code>seq</code> and <code>status</code> fields are read at <code>pframe + WLAN_HDR_A3_LEN + offset + 2</code> and <code>+4</code> with no check that those offsets are within the frame. The fix adds two guards: one before the first <code>pframe</code> access, and a second after computing <code>offset</code> (0 for open-system, 4 for WEP) to cover the <code>seq</code>/<code>status</code> reads:</p>
@@ -238,8 +239,35 @@ memcpy(pmlmeinfo->chg_txt, p + 2, len);  /* len = raw IE length byte, 0-255 */</
 +    goto authclnt_fail;</code></pre>
         </section>
 
+        <section id="onauth">
+          <h2>5. Missing frame length checks — OnAuth (AP mode)</h2>
+          <p>The same class of missing frame length guards turned up on the AP side. <code>OnAuth()</code> handles 802.11 Authentication frames received by the driver when it is operating as a soft-AP. Three OOB reads:</p>
+          <p>The first operation after the AP-state guard is <code>GetAddr2Ptr(pframe)</code>, which reads 6 bytes at offset 10–15 (the SA field). This happens with no prior check that the frame is at least <code>WLAN_HDR_A3_LEN</code> (24) bytes long. A station could send a truncated auth frame and cause an OOB read before the driver has done anything else with the packet.</p>
+          <p>When the Privacy bit is set in Frame Control, the code sets <code>iv = pframe + WLAN_HDR_A3_LEN</code> and immediately reads <code>iv[3]</code> to extract the key index. There is no check that the frame is long enough to contain four bytes after the header. A frame that is between 24 and 27 bytes long passes the first guard but triggers an OOB read here.</p>
+          <p>After computing <code>offset</code> (0 for open-system, 4 for WEP), the code reads <code>algorithm</code> at <code>pframe + WLAN_HDR_A3_LEN + offset</code> and <code>seq</code> at <code>+offset + 2</code>. No check confirms that those reads are within the frame.</p>
+          <p>The fixes use <code>return _FAIL</code> for the first two guards rather than <code>goto auth_fail</code>, because the <code>auth_fail</code> block calls <code>memcpy(pstat->hwaddr, sa, ETH_ALEN)</code> to build a rejection frame — but <code>sa</code> has not been set at those points. Jumping there would copy stack garbage into the destination address. The third guard, after <code>sa</code> is valid, sets a defined status code and uses <code>goto auth_fail</code>:</p>
+          <pre><code>+if (len < WLAN_HDR_A3_LEN)
++    return _FAIL;
+
+ sa = GetAddr2Ptr(pframe);
+ ...
++if (len < WLAN_HDR_A3_LEN + 4)     /* inside GetPrivacy() branch */
++    return _FAIL;
+
+ iv = pframe + prxattrib->hdrlen;
+ prxattrib->key_index = ((iv[3] >> 6) & 0x3);
+ ...
++if (len < WLAN_HDR_A3_LEN + offset + 4) {
++    status = WLAN_STATUS_UNSPECIFIED_FAILURE;
++    goto auth_fail;
++}
+
+ algorithm = le16_to_cpu(*(__le16 *)((SIZE_PTR)pframe + WLAN_HDR_A3_LEN + offset));
+ seq       = le16_to_cpu(*(__le16 *)((SIZE_PTR)pframe + WLAN_HDR_A3_LEN + offset + 2));</code></pre>
+        </section>
+
         <section id="ht-caps">
-          <h2>5. HT_caps_handler OOB write</h2>
+          <h2>6. HT_caps_handler OOB write</h2>
           <p>While in the same file, I found a similar issue in <code>HT_caps_handler()</code> in <code>core/rtw_wlan_util.c</code>. This function processes the HT Capabilities IE from an Association Response. It iterates <code>pIE-&gt;length</code> bytes and writes them into <code>HT_caps.u.HT_cap[]</code>, which is a fixed 26-byte array:</p>
           <pre><code>for (i = 0; i < (pIE->length); i++) {
     HT_caps.u.HT_cap[i] = pIE->data[i];
@@ -252,7 +280,7 @@ memcpy(pmlmeinfo->chg_txt, p + 2, len);  /* len = raw IE length byte, 0-255 */</
         </section>
 
         <section id="assocrsp">
-          <h2>6. OnAssocRsp IE loop OOB read</h2>
+          <h2>7. OnAssocRsp IE loop OOB read</h2>
           <p>The IE parsing loop in <code>OnAssocRsp()</code> iterates through all information elements in the Association Response frame. The loop condition is <code>i &lt; pkt_len</code>, and at the top of each iteration it casts <code>pframe + i</code> to <code>struct ndis_80211_var_ie *</code> — which has a two-byte header (element ID + length). If the last IE in the frame starts at <code>pkt_len - 1</code>, reading <code>pIE-&gt;length</code> touches <code>pframe[pkt_len]</code>, one byte past the allocation. Even when the header bytes are in bounds, the IE's declared <code>pIE-&gt;length</code> can extend past <code>pkt_len</code>, passing a truncated IE to the handler functions.</p>
           <p>The fix adds two guards at the top of the loop body:</p>
           <pre><code> for (i = (6 + WLAN_HDR_A3_LEN); i < pkt_len;) {
@@ -265,15 +293,16 @@ memcpy(pmlmeinfo->chg_txt, p + 2, len);  /* len = raw IE length byte, 0-255 */</
         </section>
 
         <section id="ie-loops">
-          <h2>7. More IE loop OOB reads — beacon and join paths</h2>
-          <p>The same missing two-guard pattern turned up in three more IE parsing loops in the driver. All three read <code>pIE-&gt;length</code> from attacker-controlled frames without first checking that two bytes are available:</p>
-          <p><strong>update_beacon_info()</strong> in <code>core/rtw_wlan_util.c</code> processes incoming Beacon frames. The loop advances by <code>(pIE-&gt;length + 2)</code> per iteration with only an <code>i &lt; len</code> guard. A Beacon with a final IE where only the element ID byte is present (no length byte) causes the loop to read <code>pIE-&gt;length</code> one byte past the IE area. A malicious AP can trigger this against any station in range.</p>
-          <p><strong>issue_assocreq()</strong> and <strong>join_cmd_hdl()</strong> in <code>core/rtw_mlme_ext.c</code> walk stored network IE data — filled earlier from the AP's Beacon and Probe Response frames. A malicious AP that sends a truncated final IE in its Beacon can plant a malformed IE buffer that triggers the OOB read later, when the driver processes the association or join.</p>
-          <p>All three were fixed with the same two-guard pattern already applied to <code>OnAssocRsp()</code>: break if fewer than <code>sizeof(*pIE)</code> bytes remain before casting, and break if the IE's declared data extends past the buffer end. The increment in <code>update_beacon_info()</code> was also corrected from <code>(pIE-&gt;length + 2)</code> to <code>sizeof(*pIE) + pIE-&gt;length</code> for consistency (Dan Carpenter's suggestion).</p>
+          <h2>8. More IE loop OOB reads — beacon, join, and WPS paths</h2>
+          <p>The same missing two-guard pattern turned up in several more places across the driver. The subsequent review rounds also surfaced additional bugs in the individual IE handlers.</p>
+          <p><strong>update_beacon_info()</strong> in <code>core/rtw_wlan_util.c</code> processes incoming Beacon frames. Three problems here. First, the <code>len</code> computation — <code>pkt_len - (_BEACON_IE_OFFSET_ + WLAN_HDR_A3_LEN)</code> — uses an unsigned result with no prior check that <code>pkt_len</code> is large enough. A frame shorter than 36 bytes wraps <code>len</code> to a very large value and sends the loop over memory far past the receive buffer. Second, the IE loop had the same missing two-guard problem as the others. Third, the WMM OUI comparison called <code>memcmp(pIE-&gt;data, WMM_PARA_OUI, 6)</code> before checking <code>pIE-&gt;length == WLAN_WMM_LEN</code> — an IE with fewer than 6 bytes of payload caused the memcmp to read into adjacent frame data. The conditions are now swapped so the length check comes first.</p>
+          <p><strong>bwmode_update_check()</strong>, called from the same loop, rejects IEs that are <em>longer</em> than <code>sizeof(struct HT_info_element)</code> but accepts any shorter length including zero. After the check it casts <code>pIE-&gt;data</code> to <code>struct HT_info_element *</code> and reads <code>infos[0]</code> at offset 1. A zero-length IE passes the guard and causes an OOB read. The guard was changed from <code>&gt;</code> to <code>!=</code> to require an exact match.</p>
+          <p><strong>issue_assocreq()</strong> and <strong>join_cmd_hdl()</strong> in <code>core/rtw_mlme_ext.c</code> walk stored network IE data filled earlier from the AP's Beacon and Probe Response frames. The loop bounds problems were the same as the others, but there were also several bugs inside the individual handlers. The vendor-specific OUI comparisons in <code>issue_assocreq()</code> called <code>memcmp</code> on a 4-byte OUI without checking that <code>pIE-&gt;length</code> is at least 4. In the WPS truncation path, when <code>wifi_spec</code> is 0, the code sets <code>vs_ie_length = 14</code> and passes <code>pIE-&gt;data</code> to <code>rtw_set_ie()</code> regardless of the actual IE length — an IE between 4 and 13 bytes triggers an OOB read of up to 10 bytes. The fix skips the IE when <code>pIE-&gt;length &lt; 14</code>. The HT Capability IE handler copied <code>sizeof(struct HT_caps_element)</code> bytes from the IE payload without checking the IE was that long, and then passed the raw <code>pIE-&gt;length</code> to <code>rtw_set_ie()</code> — if the IE was longer than the struct, that caused an OOB read from <code>pmlmeinfo->HT_caps</code>. In <code>join_cmd_hdl()</code>, the WMM check used <code>pIE-&gt;length &gt;= 4</code> before calling <code>WMM_param_handler()</code>, but the handler reads <code>pIE-&gt;data + 6</code> and copies <code>sizeof(struct WMM_para_element)</code> (18 bytes) for a total of 24 bytes — the guard was strengthened to <code>pIE-&gt;length &gt;= WLAN_WMM_LEN</code>. The HT Operation IE handler cast <code>pIE-&gt;data</code> to <code>struct HT_info_element *</code> and read <code>infos[0]</code> at offset 1 with no minimum length check.</p>
+          <p><strong>rtw_get_wps_ie()</strong> in <code>core/rtw_ieee80211.c</code> searches IE data for a WPS IE. The loop only checked <code>cnt &lt; in_len</code> before reading <code>in_ie[cnt + 1]</code> — if the buffer ends on an element_id byte with no length byte following, this reads one byte past the end. There was also no check that the declared payload fits within <code>in_len</code>, and the 4-byte WPS OUI comparison ran without confirming the IE payload was at least 4 bytes long.</p>
         </section>
 
         <section id="wpa-ie">
-          <h2>8. rtw_cfg80211_set_wpa_ie() — WPA IE one-byte overflow (local)</h2>
+          <h2>9. rtw_cfg80211_set_wpa_ie() — WPA IE one-byte overflow (local)</h2>
           <p>This one is different from the others: it is a local attack, not over-the-air. <code>rtw_cfg80211_set_wpa_ie()</code> in <code>os_dep/ioctl_cfg80211.c</code> handles WPA and WPA2 IE data supplied via <code>NL80211_CMD_CONNECT</code>. It copies the IE into <code>supplicant_ie</code>, a 256-byte array in <code>struct security_priv</code>:</p>
           <pre><code>memcpy(padapter->securitypriv.supplicant_ie, &pwpa[0], wpa_ielen + 2);</code></pre>
           <p><code>wpa_ielen</code> is the raw IE length field — a <code>u8</code>, so it ranges from 0 to 255. When a local user issues a connect with a crafted WPA IE of length 255, <code>wpa_ielen + 2 = 257</code> and the <code>memcpy</code> writes one byte past the end of the 256-byte buffer into the adjacent <code>last_mic_err_time</code> field.</p>
@@ -286,15 +315,19 @@ memcpy(pmlmeinfo->chg_txt, p + 2, len);  /* len = raw IE length byte, 0-255 */</
         </section>
 
         <section id="patches">
-          <h2>9. Patches</h2>
-          <p>Three series went to the staging mailing list. Series 1 (v7) covered both the <code>OnAuthClient()</code> heap overflow and the missing frame length guards — the frame length patch followed after Dan Carpenter's review of the overflow fix. Series 2 (v4) fixed the <code>HT_caps_handler()</code> OOB write and the <code>OnAssocRsp()</code> IE loop OOB read. Series 3 (v4) fixed the remaining IE parsing loops in <code>update_beacon_info()</code>, <code>issue_assocreq()</code>, and <code>join_cmd_hdl()</code>, plus the one-byte WPA IE overflow in <code>rtw_cfg80211_set_wpa_ie()</code>, with Reviewed-by from Luka Gejak.</p>
+          <h2>10. Patches</h2>
+          <p>Three series went to the staging mailing list. Series 1 (v8) covered the <code>OnAuthClient()</code> heap overflow, the client-side frame length checks, and the AP-side frame length guards in <code>OnAuth()</code> — the last patch was split into its own series after the earlier fixes were already applied to Greg's tree. Series 2 (v5) fixed the <code>HT_caps_handler()</code> OOB write, the <code>OnAssocRsp()</code> IE loop OOB read, a truncated frame guard before the fixed-field reads, and the WMM length guard. Series 3 (v5) fixed the remaining IE parsing issues in <code>update_beacon_info()</code>, <code>bwmode_update_check()</code>, <code>issue_assocreq()</code>, <code>join_cmd_hdl()</code>, and <code>rtw_get_wps_ie()</code>, plus the one-byte WPA IE overflow in <code>rtw_cfg80211_set_wpa_ie()</code>, with Reviewed-by from Luka Gejak.</p>
           <p>All changes are in <code>drivers/staging/rtl8723bs/</code>:</p>
           <ul>
-            <li><code>core/rtw_mlme_ext.c</code> — <code>OnAuthClient()</code>: IE length check, frame length guards</li>
-            <li><code>core/rtw_wlan_util.c</code> — <code>HT_caps_handler()</code>: IE length guard</li>
-            <li><code>core/rtw_mlme_ext.c</code> — <code>OnAssocRsp()</code>: IE loop bounds checks</li>
-            <li><code>core/rtw_wlan_util.c</code> — <code>update_beacon_info()</code>: IE loop bounds checks + increment fix</li>
-            <li><code>core/rtw_mlme_ext.c</code> — <code>issue_assocreq()</code>, <code>join_cmd_hdl()</code>: IE loop bounds checks</li>
+            <li><code>core/rtw_mlme_ext.c</code> — <code>OnAuthClient()</code>: Challenge Text length check, frame length guards</li>
+            <li><code>core/rtw_mlme_ext.c</code> — <code>OnAuth()</code>: three frame length guards (header, IV, algorithm/seq)</li>
+            <li><code>core/rtw_wlan_util.c</code> — <code>HT_caps_handler()</code>: OOB write fix, LDPC/STBC macro OOB read fix</li>
+            <li><code>core/rtw_mlme_ext.c</code> — <code>OnAssocRsp()</code>: IE loop bounds checks, truncated frame guard, WMM length guard</li>
+            <li><code>core/rtw_wlan_util.c</code> — <code>update_beacon_info()</code>: pkt_len underflow guard, IE loop bounds checks, WMM condition ordering</li>
+            <li><code>core/rtw_wlan_util.c</code> — <code>bwmode_update_check()</code>: minimum IE length guard</li>
+            <li><code>core/rtw_mlme_ext.c</code> — <code>issue_assocreq()</code>: OUI length guard, WPS truncation guard, HT caps length check</li>
+            <li><code>core/rtw_mlme_ext.c</code> — <code>join_cmd_hdl()</code>: WMM length guard, HT info length check</li>
+            <li><code>core/rtw_ieee80211.c</code> — <code>rtw_get_wps_ie()</code>: header bounds, payload bounds, OUI length guard</li>
             <li><code>os_dep/ioctl_cfg80211.c</code> — <code>rtw_cfg80211_set_wpa_ie()</code>: WPA/WPA2 IE size check</li>
           </ul>
           <div class="note">
