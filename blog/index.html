@@ -229,6 +229,25 @@
               </p>
             </a>
 
+            <a class="post-card" href="iscsi-chap-base64-overflow">
+              <h2 class="post-title">iSCSI CHAP: Heap Buffer Overflow in the Linux Kernel</h2>
+              <p class="post-meta">
+                <span>Linux Kernel • Vulnerability Research</span>
+                <span>Kernel Security</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Linux Kernel</span>
+                <span class="tag">iSCSI</span>
+                <span class="tag">Heap Overflow</span>
+                <span class="tag">Pre-auth</span>
+                <span class="tag">KASAN</span>
+              </div>
+              <p class="post-excerpt">
+                Heap buffer overflow in the iSCSI target CHAP authentication code, reachable before password validation. The BASE64 branch of <code>chap_server_compute_hash()</code> passes up to 127 attacker-controlled characters to <code>chap_base64_decode()</code> without a length check, writing 95 bytes into a 16 or 32-byte heap object. Attacker needs the CHAP username only. Confirmed with KASAN on linux-next, patch submitted to Martin K. Petersen with <code>Fixes: 1e5733883421</code>.
+              </p>
+            </a>
+
             <a class="post-card" href="rtl8723bs-wifi-overflow">
               <h2 class="post-title">rtl8723bs — WiFi Heap Overflow in the Linux Kernel</h2>
               <p class="post-meta">
