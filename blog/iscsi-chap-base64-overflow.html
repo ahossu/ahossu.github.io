@@ -184,7 +184,7 @@
 
         <section id="background">
           <h2>1. Background</h2>
-          <p>I was reading through the iSCSI target authentication code in <code>drivers/target/iscsi/iscsi_target_auth.c</code>, looking at what an unauthenticated initiator can reach before credentials are validated. The 2022 commit <code>1e5733883421</code> ("scsi: target: iscsi: Support base64 in CHAP") stood out - it extended the login path with a new decoding branch, so I read through <code>chap_server_compute_hash()</code> to see how the new BASE64 case compared to the existing HEX branch.</p>
+          <p>I was reading through the iSCSI target authentication code in <code>drivers/target/iscsi/iscsi_target_auth.c</code>, looking at what an unauthenticated initiator can reach before credentials are validated. The 2022 commit <code>1e5733883421</code> ("scsi: target: iscsi: Support base64 in CHAP") stood out — it extended the login path with a new decoding branch, so I read through <code>chap_server_compute_hash()</code> to see how the new BASE64 case compared to the existing HEX branch.</p>
           <p>The difference was immediate. The HEX branch validates length before touching the destination. The BASE64 branch does not.</p>
         </section>
 
@@ -226,7 +226,7 @@ static int chap_base64_decode(u8 *dst, const char *src, size_t len)
     }
     return cp - dst;
 }</code></pre>
-          <p>The length check at line 344 fires on the return value - after the write has already happened. By the time the comparison <code>!= chap-&gt;digest_size</code> is evaluated, the destination buffer has already been overflowed.</p>
+          <p>The length check at line 344 fires on the return value — after the write has already happened. By the time the comparison <code>!= chap-&gt;digest_size</code> is evaluated, the destination buffer has already been overflowed.</p>
         </section>
 
         <section id="math">
@@ -276,12 +276,12 @@ allocated 16-byte region here:
 
         <section id="exploitation">
           <h2>6. Exploitation primitive</h2>
-          <p>The overflow writes 95 bytes starting at <code>client_digest</code>, which comes from <code>kmalloc-16</code> or <code>kmalloc-32</code> depending on the hash algorithm. Anything allocated from the same slab cache that lands adjacent in memory gets overwritten. Another <code>iscsi_chap</code> structure from a concurrent connection is the natural spray target - multiple login attempts from separate connections can be used to position allocations.</p>
+          <p>The overflow writes 95 bytes starting at <code>client_digest</code>, which comes from <code>kmalloc-16</code> or <code>kmalloc-32</code> depending on the hash algorithm. Anything allocated from the same slab cache that lands adjacent in memory gets overwritten. Another <code>iscsi_chap</code> structure from a concurrent connection is the natural spray target — multiple login attempts from separate connections can be used to position allocations.</p>
           <p>To demonstrate the exploitation primitive I wrote <code>rce_demo.c</code>, a userspace program that places a <code>client_digest</code>-sized buffer and a victim struct containing a function pointer in contiguous memory (mimicking the kernel slab layout), then triggers the overflow with a crafted base64 payload that encodes the address of a target function at the right offset. The corrupted pointer is called after the overflow:</p>
           <pre><code>fn_ptr corrupted, calling 0x55a1b2c3d4e0
 executing shell command...
 uid=1000(alex) hostname 6.19.11-arch1-1</code></pre>
-          <p>The allocation in <code>rce_demo.c</code> is a single contiguous <code>calloc()</code> covering the digest buffer, the victim struct, and enough extra space to absorb the full 95-byte write without hitting glibc chunk metadata. Two separate allocations do not work - the chunk header between them gets corrupted at the 17th byte of overflow.</p>
+          <p>The allocation in <code>rce_demo.c</code> is a single contiguous <code>calloc()</code> covering the digest buffer, the victim struct, and enough extra space to absorb the full 95-byte write without hitting glibc chunk metadata. Two separate allocations do not work — the chunk header between them gets corrupted at the 17th byte of overflow.</p>
         </section>
 
         <section id="fix">
@@ -298,7 +298,7 @@ uid=1000(alex) hostname 6.19.11-arch1-1</code></pre>
                 goto out;
         }
         break;</code></pre>
-          <p>For SHA-256 (<code>digest_size = 32</code>) the limit is 43 characters. For MD5 (<code>digest_size = 16</code>) it is 22. Any attacker-supplied string longer than the limit is rejected before the decoder is called. An alternative fix - passing <code>digest_size</code> as a maximum destination length into <code>chap_base64_decode()</code> and enforcing it inside the loop - would also work, but the call-site check is simpler and consistent with how the HEX branch handles it.</p>
+          <p>For SHA-256 (<code>digest_size = 32</code>) the limit is 43 characters. For MD5 (<code>digest_size = 16</code>) it is 22. Any attacker-supplied string longer than the limit is rejected before the decoder is called. An alternative fix — passing <code>digest_size</code> as a maximum destination length into <code>chap_base64_decode()</code> and enforcing it inside the loop — would also work, but the call-site check is simpler and consistent with how the HEX branch handles it.</p>
           <div class="note">
             All actively supported trees are affected: linux-next, 6.14, 6.12, 6.6, 6.1. The BASE64 branch was introduced in 2022 and has been present in every kernel release since. The patch was submitted with a <code>Cc: stable@vger.kernel.org</code> tag to cover the LTS trees.
           </div>
