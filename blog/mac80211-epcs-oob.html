@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>mac80211 EPCS: OOB Array Access in the Linux Kernel WiFi Stack</title>
+    <meta name="description" content="Out-of-bounds array access in ieee80211_ml_epcs() in the Linux kernel mac80211 WiFi stack: a rogue WiFi 7 AP can send an EPCS Enable Response with link_id 15, reading past sdata->link[] (15 entries) into adjacent memory and crashing the kernel.">
+    <meta property="og:title" content="mac80211 EPCS: OOB Array Access in the Linux Kernel WiFi Stack" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>mac80211 EPCS: OOB Array Access in the Linux Kernel WiFi Stack</h1>
+          <p class="post-subtitle">
+            An out-of-bounds array access in the mainline mac80211 WiFi stack, triggerable by a rogue WiFi 7 AP. The EPCS handler in <code>ieee80211_ml_epcs()</code> extracts a 4-bit <code>link_id</code> from an attacker-controlled frame field, producing values 0–15. The <code>sdata->link[]</code> array has 15 entries (indices 0–14), so link_id 15 reads past the end of the array into adjacent memory and crashes the kernel.
+          </p>
+          <p class="post-meta">
+            <span>Linux Kernel • Vulnerability Research</span>
+            <span>Kernel Security</span>
+            <span>by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Linux Kernel</span>
+            <span class="tag">mac80211</span>
+            <span class="tag">WiFi 7</span>
+            <span class="tag">OOB Access</span>
+            <span class="tag">Kernel Crash</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#background">1. Background</a></li>
+            <li><a href="#vulnerable-code">2. The vulnerable code</a></li>
+            <li><a href="#what-link15-hits">3. What sdata->link[15] actually hits</a></li>
+            <li><a href="#reachability">4. Reachability</a></li>
+            <li><a href="#affected-devices">5. Affected devices</a></li>
+            <li><a href="#fix">6. The fix</a></li>
+            <li><a href="#patch">7. Patch status</a></li>
+          </ul>
+        </nav>
+
+        <section id="background">
+          <h2>1. Background</h2>
+          <p>WiFi 7 (802.11be) introduced EPCS — Emergency Preparedness Communication Service — a mechanism that lets an AP grant priority access to specific links in a multi-link operation (MLO) setup. The kernel's mac80211 subsystem added support for EPCS configuration in commit <code>de86c5f60839</code> ("wifi: mac80211: Add support for EPCS configuration"), merged in v6.15.</p>
+          <p>I found this bug while reading through the MLO-related code in <code>net/mac80211/mlme.c</code>, looking at how link_id values extracted from over-the-air frames are used as array indices. The same class of bug had already been fixed once before in <code>ieee80211_ml_reconfiguration()</code> by commit <code>162d331d833d</code>, so I checked whether the pattern repeated elsewhere. It did.</p>
+        </section>
+
+        <section id="vulnerable-code">
+          <h2>2. The vulnerable code</h2>
+          <p>Inside <code>ieee80211_ml_epcs()</code>, the function parses PER_STA_PROFILE subelements from a PRIO_ACCESS ML element in an EPCS Enable Response action frame. Each subelement carries a control field from which <code>link_id</code> is extracted:</p>
+          <pre><code>/* net/mac80211/mlme.c */
+control = get_unaligned_le16(pos);
+link_id = control & IEEE80211_MLE_STA_EPCS_CONTROL_LINK_ID;
+
+link = sdata_dereference(sdata->link[link_id], sdata);
+if (!link)
+    continue;</code></pre>
+          <p><code>IEEE80211_MLE_STA_EPCS_CONTROL_LINK_ID</code> is <code>0x000f</code>, so the mask produces values 0–15. <code>sdata->link[]</code> is declared with <code>IEEE80211_MLD_MAX_NUM_LINKS</code> entries, which is 15 — valid indices are 0–14. When <code>link_id</code> is 15, <code>sdata->link[15]</code> is a one-past-the-end access.</p>
+        </section>
+
+        <section id="what-link15-hits">
+          <h2>3. What sdata->link[15] actually hits</h2>
+          <p>The <code>link[]</code> array is an array of <code>struct ieee80211_link_data *</code> pointers. Index 15 reads the first word of <code>sdata->activate_links_work</code>, which is a <code>wiphy_work</code> struct. After <code>INIT_LIST_HEAD()</code> during initialization, the embedded <code>list_head</code> in that struct points to itself — it is non-NULL.</p>
+          <p>This means the NULL check on the result does not catch the invalid access. The garbage pointer is treated as a valid <code>struct ieee80211_link_data *</code> and passed to <code>ieee80211_sta_wmm_params()</code>, which dereferences <code>link->sdata</code>. That read hits an arbitrary memory location and crashes the kernel.</p>
+        </section>
+
+        <section id="reachability">
+          <h2>4. Reachability</h2>
+          <p>The function processes EPCS Enable Response action frames received from the AP. There are two paths into this code:</p>
+          <ul>
+            <li><strong>Solicited response</strong> — the client sends an EPCS Enable Request, the AP responds. The response is parsed by this function.</li>
+            <li><strong>Unsolicited notification</strong> — when <code>dialog_token</code> is 0, the AP can send an EPCS Enable Response at any time without a prior request from the client. This path is reachable whenever EPCS is already enabled on the connection.</li>
+          </ul>
+          <p>The unsolicited path is the more interesting one. A connected WiFi 7 AP — or an attacker who has taken over the AP's MAC address on the channel — can send the frame at any time. The action frame is protected by CCMP (it is a robust management frame), so the attacker needs to be the legitimate AP or to have compromised the AP's PTK. A rogue AP that the client associates with from the start has full control.</p>
+          <p>The trigger payload is minimal: an EPCS Enable Response action frame containing a single PER_STA_PROFILE subelement with the link_id field set to 15.</p>
+        </section>
+
+        <section id="affected-devices">
+          <h2>5. Affected devices</h2>
+          <p>The bug affects any Linux system running kernel v6.15 or later with a WiFi 7 adapter whose driver enables EPCS support. The EPCS feature was introduced in v6.15 and is present in every kernel release since, including the current v7.x series.</p>
+          <p>Affected drivers include:</p>
+          <ul>
+            <li><strong>iwlwifi</strong> — Intel BE200, BE202 (the most common WiFi 7 adapters in current laptops)</li>
+            <li><strong>mt76/mt7925</strong> — MediaTek MT7925</li>
+            <li><strong>ath12k</strong> — Qualcomm WCN7850</li>
+          </ul>
+          <p>LTS kernel trees v6.12 and older are not affected — the EPCS code does not exist there. Android devices are also unaffected as of this writing, as Android kernels have not picked up the EPCS feature.</p>
+        </section>
+
+        <section id="fix">
+          <h2>6. The fix</h2>
+          <p>The fix is identical to the one applied in <code>ieee80211_ml_reconfiguration()</code> — a bounds check on <code>link_id</code> before it is used as an array index:</p>
+          <pre><code> control = get_unaligned_le16(pos);
+ link_id = control & IEEE80211_MLE_STA_EPCS_CONTROL_LINK_ID;
+
++if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
++    continue;
++
+ link = sdata_dereference(sdata->link[link_id], sdata);
+ if (!link)
+     continue;</code></pre>
+          <p>Three lines. The subelement with the out-of-range link_id is skipped, and parsing continues with the next one.</p>
+        </section>
+
+        <section id="patch">
+          <h2>7. Patch status</h2>
+          <p>The patch was sent to the linux-wireless mailing list on 2026-05-15 and accepted by Johannes Berg (Intel) as upstream commit <a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f718506edd2d9c6a308ded9d13c632bf7b7d5a2c">f718506edd2d</a>. Sasha Levin backported it to the stable trees: 7.0-stable and 6.18-stable review patches were sent on 2026-05-28.</p>
+          <p>Other recent kernel work: a heap buffer overflow in the iSCSI target CHAP authentication code (<a href="iscsi-chap-base64-overflow">separate post</a>), and three patch series for the rtl8723bs staging WiFi driver (<a href="rtl8723bs-wifi-overflow">separate post</a>).</p>
+          <div class="note">
+            The bug was introduced in v6.15 (February 2025) and affects every kernel release since. The stable backports cover 6.18 and 7.0. Kernels between v6.15 and v6.17 that are still in use should apply the patch manually or cherry-pick from the upstream commit.
+          </div>
+        </section>
+
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

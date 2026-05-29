@@ -210,6 +210,25 @@
               </p>
             </a>
 
+            <a class="post-card" href="mac80211-epcs-oob">
+              <h2 class="post-title">mac80211 EPCS: OOB Array Access in the Linux Kernel WiFi Stack</h2>
+              <p class="post-meta">
+                <span>Linux Kernel • Vulnerability Research</span>
+                <span>Kernel Security</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Linux Kernel</span>
+                <span class="tag">mac80211</span>
+                <span class="tag">WiFi 7</span>
+                <span class="tag">OOB Access</span>
+                <span class="tag">Kernel Crash</span>
+              </div>
+              <p class="post-excerpt">
+                Out-of-bounds array access in <code>ieee80211_ml_epcs()</code> in the mainline mac80211 WiFi stack. A 4-bit <code>link_id</code> field extracted from a PRIO_ACCESS ML element can be 0–15, but <code>sdata->link[]</code> has only 15 entries. Index 15 reads into <code>activate_links_work</code>, bypasses the NULL check, and crashes the kernel via <code>ieee80211_sta_wmm_params()</code>. Triggerable by any rogue WiFi 7 AP. Accepted by Johannes Berg, backported to stable.
+              </p>
+            </a>
+
             <a class="post-card" href="wraithstep">
               <h2 class="post-title">WRAITHSTEP (ROCSC Finals 2026) — Linux Implant Forensics</h2>
               <p class="post-meta">
