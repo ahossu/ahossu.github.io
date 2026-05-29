@@ -267,6 +267,25 @@
               </p>
             </a>
 
+            <a class="post-card" href="veilgate">
+              <h2 class="post-title">VEILGATE (ROCSC Bootcamp 2026) — Android Native RE with Control Flow Flattening</h2>
+              <p class="post-meta">
+                <span>Android • Reverse Engineering</span>
+                <span>ROCSC Bootcamp 2026</span>
+                <span>Challenge by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Android</span>
+                <span class="tag">RegisterNatives</span>
+                <span class="tag">CFF / OLLVM</span>
+                <span class="tag">AES-128-CBC</span>
+                <span class="tag">Ghidra</span>
+              </div>
+              <p class="post-excerpt">
+                NorthStar License Verifier — three layers of protection used in real commercial apps. <code>RegisterNatives</code> hides the JNI binding (no exported symbol), OLLVM-style control flow flattening turns the verification function into a 124-node state machine, and the AES-128-CBC key is split across two XOR'd arrays in <code>.rodata</code>. Deobfuscate with angr/deflat.py, extract the key material from Ghidra, and decrypt the embedded license.
+              </p>
+            </a>
+
             <a class="post-card" href="rtl8723bs-wifi-overflow">
               <h2 class="post-title">rtl8723bs — WiFi Heap Overflow in the Linux Kernel</h2>
               <p class="post-meta">

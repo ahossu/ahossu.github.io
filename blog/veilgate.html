@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>VEILGATE (ROCSC Bootcamp 2026) — Android Native RE with Control Flow Flattening</title>
+    <meta name="description" content="Writeup for VEILGATE (ROCSC Bootcamp 2026) — Android license verifier with RegisterNatives binding, OLLVM-style control flow flattening in the native library, and AES-128-CBC decryption with a split XOR key">
+    <meta property="og:title" content="VEILGATE (ROCSC Bootcamp 2026) — Android Native RE with Control Flow Flattening" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="index.html">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>VEILGATE (ROCSC Bootcamp 2026) — Android Native RE with Control Flow Flattening</h1>
+          <p class="post-subtitle">
+            An Android license verifier that hides its validation logic behind three layers: <code>RegisterNatives</code> binding with no exported symbol, OLLVM-style control flow flattening in the native library, and AES-128-CBC decryption with a key split across two XOR'd arrays in <code>.rodata</code>. Find the license key the app accepts.
+          </p>
+          <p class="post-meta">
+            <span>Android • Reverse Engineering</span>
+            <span>ROCSC Bootcamp 2026</span>
+            <span>Challenge by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Android</span>
+            <span class="tag">RegisterNatives</span>
+            <span class="tag">CFF / OLLVM</span>
+            <span class="tag">AES-128-CBC</span>
+            <span class="tag">Ghidra</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#overview">1. Overview</a></li>
+            <li><a href="#dex">2. DEX analysis — finding the native call</a></li>
+            <li><a href="#registernatives">3. RegisterNatives — locating the real function</a></li>
+            <li><a href="#cff">4. Control flow flattening — deobfuscating the dispatcher</a></li>
+            <li><a href="#key-extraction">5. Key extraction and AES decryption</a></li>
+            <li><a href="#solve">6. Solve script</a></li>
+          </ul>
+        </nav>
+
+        <section id="overview">
+          <h2>1. Overview</h2>
+          <p>NorthStar License Verifier v3.1.0 is a single-screen Android app. It takes a license key as input, sends it to a native library, and displays "License Accepted" or "License Rejected". The flag is <code>CTF{sha256(license_key)}</code>.</p>
+          <p>The challenge combines three techniques found in real commercial Android applications — TikTok, Genshin Impact, PUBG Mobile, and banking apps all use some variation of this stack:</p>
+          <ul>
+            <li><strong>RegisterNatives</strong> — the JNI binding is set up at runtime in <code>JNI_OnLoad</code>, so the standard <code>Java_com_northstar_...</code> export symbol does not exist in the <code>.so</code></li>
+            <li><strong>Control Flow Flattening (CFF)</strong> — the core verification function is compiled with an OLLVM-style obfuscation pass that replaces the natural control flow graph with a state-machine dispatcher</li>
+            <li><strong>Split key material</strong> — the AES key is not stored as a single array; it is reconstructed at runtime by XOR'ing two separate byte arrays from <code>.rodata</code></li>
+          </ul>
+        </section>
+
+        <section id="dex">
+          <h2>2. DEX analysis — finding the native call</h2>
+          <p>Open <code>NorthStarLicVerify.apk</code> in JADX. <code>com.northstar.licverify.MainActivity</code> calls:</p>
+          <pre><code>val ok = NativeLib.verifyLicense(key)</code></pre>
+          <p>The <code>NativeLib</code> class:</p>
+          <pre><code>object NativeLib {
+    init { System.loadLibrary("northstar") }
+    external fun verifyLicense(key: String): Boolean
+}</code></pre>
+          <p><code>verifyLicense()</code> is declared <code>external</code> — the implementation lives in <code>libnorthstar.so</code>. The app takes user input, passes it to the native side, and shows the result. The license key never appears in the UI.</p>
+        </section>
+
+        <section id="registernatives">
+          <h2>3. RegisterNatives — locating the real function</h2>
+          <p>Extract <code>lib/arm64-v8a/libnorthstar.so</code> from the APK and check the exports:</p>
+          <pre><code>nm --dynamic libnorthstar.so | grep " T "
+JNI_OnLoad</code></pre>
+          <p>No <code>Java_com_northstar_licverify_NativeLib_verifyLicense</code> — the binding is not done by naming convention. Instead, <code>JNI_OnLoad</code> calls <code>RegisterNatives()</code> to map the method at runtime.</p>
+          <h3>Static approach (Ghidra)</h3>
+          <p>In Ghidra, navigate to <code>JNI_OnLoad</code>. The function:</p>
+          <ol>
+            <li>Calls <code>GetEnv</code> to obtain <code>JNIEnv*</code></li>
+            <li>Calls <code>FindClass("com/northstar/licverify/NativeLib")</code></li>
+            <li>Builds a <code>JNINativeMethod</code> struct array: method name <code>"verifyLicense"</code>, descriptor <code>"(Ljava/lang/String;)Z"</code>, and a function pointer</li>
+            <li>Calls <code>RegisterNatives(env, cls, methods, 1)</code></li>
+          </ol>
+          <p>The function pointer in the struct points to <code>native_verify_license</code>, which is a thin JNI wrapper around <code>ns_verify_license</code> — the real verification function.</p>
+          <h3>Dynamic approach (Frida)</h3>
+          <pre><code>Interceptor.attach(Module.findExportByName(null, 'RegisterNatives'), {
+    onEnter: function(args) {
+        let count = args[3].toInt32();
+        let methods = args[2];
+        for (let i = 0; i &lt; count; i++) {
+            let name = methods.add(i * 24).readPointer().readCString();
+            let sig  = methods.add(i * 24 + 8).readPointer().readCString();
+            let fn   = methods.add(i * 24 + 16).readPointer();
+            console.log('[RegisterNatives] ' + name + ' ' + sig + ' -> ' + fn);
+        }
+    }
+});</code></pre>
+          <p>Output:</p>
+          <pre><code>[RegisterNatives] verifyLicense (Ljava/lang/String;)Z -> 0x7b1234 (native_verify_license)</code></pre>
+        </section>
+
+        <section id="cff">
+          <h2>4. Control flow flattening — deobfuscating the dispatcher</h2>
+          <p>Load <code>libnorthstar.so</code> in Ghidra and navigate to <code>ns_verify_license</code>. The CFG is immediately recognizable as CFF — a star-shaped graph where every basic block jumps back to a central dispatcher node:</p>
+          <pre><code>[init] -> [dispatcher loop] -> [case blocks] -> [back to dispatcher]</code></pre>
+          <p>The function has 124 CFG nodes; the dispatcher has 8 incoming edges (the highest in-degree in the entire graph). Each block computes a new state value and branches back to the dispatcher's <code>switch</code>.</p>
+          <p>The state machine uses <code>volatile uint32_t __sw</code> as the dispatch variable, with constants like <code>0x3a9f2d71</code> (entry), <code>0x7c1e8b4a</code> (XOR key reconstruction), <code>0x51c3a8d6</code> (AES decrypt), and so on. The <code>volatile</code> qualifier and <code>optnone</code> attribute prevent the compiler from optimizing the dispatcher away.</p>
+          <h3>Deobfuscation with deflat.py + angr</h3>
+          <pre><code>python3 deflat.py libnorthstar.so &lt;addr_of_ns_verify_license&gt;</code></pre>
+          <p>deflat.py uses angr to:</p>
+          <ol>
+            <li>Build the CFG and identify the dispatcher (node with highest in-degree)</li>
+            <li>Symbolically execute each block to determine the next state constant</li>
+            <li>Patch the binary with direct jumps, eliminating the dispatcher entirely</li>
+          </ol>
+          <p>After deobfuscation, the logic is straightforward:</p>
+          <pre><code>// reconstruct key: XOR two .rodata arrays
+for (i = 0; i &lt; 16; i++)
+    actual_key[i] = s_key_a[i] ^ s_key_b[i];
+
+// sanity check: key must not be all-zero
+uint8_t acc = 0;
+for (i = 0; i &lt; 16; i++) acc |= actual_key[i];
+if (acc == 0) return 0;
+
+// AES-128-CBC decrypt the encrypted license key
+out = malloc(sizeof(s_enc_lkey) + 1);
+aes128_cbc_decrypt(actual_key, s_iv, s_enc_lkey, out, sizeof(s_enc_lkey));
+
+// validate PKCS7 padding
+pad = out[31];
+// ...
+
+// compare with user input
+result = (strcmp(input, (char *)out) == 0) ? 1 : 0;
+free(out);
+return result;</code></pre>
+          <div class="note">
+            The CFF pattern here mirrors what NCC Group documented in their 2022 analysis of TikTok's Android app. The same obfuscation is available through OLLVM and its successor O-MVLL (Open Obfuscator for LLVM by Build38). In real applications the dispatcher typically has dozens of incoming edges — 8 is on the lighter end, but enough to make manual reconstruction tedious without symbolic execution.
+          </div>
+        </section>
+
+        <section id="key-extraction">
+          <h2>5. Key extraction and AES decryption</h2>
+          <p>Three pieces of data are needed from <code>.rodata</code>, all found via Ghidra cross-references from the deobfuscated code:</p>
+          <p><strong>KEY_A</strong> and <strong>KEY_B</strong> — two 16-byte arrays whose XOR produces the AES key:</p>
+          <pre><code>KEY_A = bytes([0xe5,0xea,0xcd,0x4a,0xd6,0xb8,0x3a,0x7f,
+               0x96,0x45,0xfd,0xe6,0x37,0x43,0x18,0x47])
+
+KEY_B = bytes([0xab,0x85,0xbf,0x3e,0xbe,0xeb,0x4e,0x1e,
+               0xe4,0x1a,0xb6,0x83,0x4e,0x71,0x28,0x75])
+
+key = bytes(a ^ b for a, b in zip(KEY_A, KEY_B))
+# key = b"NorthStar_Key202"</code></pre>
+          <p><strong>IV</strong> — the 16-byte initialization vector for CBC mode:</p>
+          <pre><code>IV = bytes([0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,
+            0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10])</code></pre>
+          <p><strong>s_enc_lkey</strong> — the 32-byte encrypted license key (two AES blocks, PKCS7 padded):</p>
+          <pre><code>ENC_LKEY = bytes([
+    0x49,0x37,0x72,0xc2,0xba,0xdf,0xbb,0x52,
+    0x98,0xf4,0xd3,0x17,0xf8,0x5d,0xd5,0x45,
+    0x36,0x33,0xd7,0xe3,0x05,0x19,0xea,0x88,
+    0xa4,0x30,0x33,0x80,0xbd,0xd1,0xfa,0x9e,
+])</code></pre>
+          <p>Decrypt and unpad:</p>
+          <pre><code>from Crypto.Cipher import AES
+
+cipher = AES.new(key, AES.MODE_CBC, IV)
+plain  = cipher.decrypt(ENC_LKEY)
+
+pad = plain[-1]
+license_key = plain[:-pad].decode()
+print(license_key)
+# NSLV-7X9K-A3R5-M2P8</code></pre>
+          <p>The license key is <strong>NSLV-7X9K-A3R5-M2P8</strong>.</p>
+        </section>
+
+        <section id="solve">
+          <h2>6. Solve script</h2>
+          <p>Extracts the key material from the byte arrays, reconstructs the AES key, decrypts the license, and computes the flag:</p>
+          <pre><code>from Crypto.Cipher import AES
+import hashlib
+
+KEY_A = bytes([0xe5,0xea,0xcd,0x4a,0xd6,0xb8,0x3a,0x7f,
+               0x96,0x45,0xfd,0xe6,0x37,0x43,0x18,0x47])
+KEY_B = bytes([0xab,0x85,0xbf,0x3e,0xbe,0xeb,0x4e,0x1e,
+               0xe4,0x1a,0xb6,0x83,0x4e,0x71,0x28,0x75])
+IV    = bytes([0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,
+               0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10])
+ENC   = bytes([0x49,0x37,0x72,0xc2,0xba,0xdf,0xbb,0x52,
+               0x98,0xf4,0xd3,0x17,0xf8,0x5d,0xd5,0x45,
+               0x36,0x33,0xd7,0xe3,0x05,0x19,0xea,0x88,
+               0xa4,0x30,0x33,0x80,0xbd,0xd1,0xfa,0x9e])
+
+key = bytes(a ^ b for a, b in zip(KEY_A, KEY_B))
+plain = AES.new(key, AES.MODE_CBC, IV).decrypt(ENC)
+license_key = plain[:-plain[-1]].decode()
+
+print(license_key)
+print("CTF{" + hashlib.sha256(license_key.encode()).hexdigest() + "}")</code></pre>
+          <pre><code>NSLV-7X9K-A3R5-M2P8
+CTF{87d02aaaacfeea9844305f658c7449a15cb29baa6d2fe397eeb8b82dc47bca32}</code></pre>
+          <div class="note">
+            The three techniques in this challenge — <code>RegisterNatives</code> binding, control flow flattening, and split key material — appear together in real-world Android protections. OLLVM and O-MVLL provide the CFF pass; commercial packers like DexGuard and Bangcle add <code>RegisterNatives</code> indirection; and key splitting across multiple <code>.rodata</code> arrays is standard practice in banking and DRM applications. The intended solve path is Ghidra + deflat.py/angr for the static route, or Frida + <code>RegisterNatives</code> hook for the dynamic route.
+          </div>
+        </section>
+
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>
