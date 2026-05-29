@@ -335,7 +335,7 @@ license_key = plain[:-plain[-1]].decode()
 print(license_key)
 print("CTF{" + hashlib.sha256(license_key.encode()).hexdigest() + "}")</code></pre>
           <pre><code>NSLV-7X9K-A3R5-M2P8
-CTF{87d02aaaacfeea9844305f658c7449a15cb29baa6d2fe397eeb8b82dc47bca32}</code></pre>
+CTF{&lt;64 hex chars&gt;}</code></pre>
           <div class="note">
             The three techniques in this challenge — <code>RegisterNatives</code> binding, control flow flattening, and split key material — appear together in real-world Android protections. OLLVM and O-MVLL provide the CFF pass; commercial packers like DexGuard and Bangcle add <code>RegisterNatives</code> indirection; and key splitting across multiple <code>.rodata</code> arrays is standard practice in banking and DRM applications. The intended solve path is Ghidra + deflat.py/angr for the static route, or Frida + <code>RegisterNatives</code> hook for the dynamic route.
           </div>
