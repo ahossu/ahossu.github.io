@@ -246,10 +246,10 @@ if (!link)
 
         <section id="patch">
           <h2>7. Patch status</h2>
-          <p>The patch was sent to the linux-wireless mailing list on 2026-05-15 and accepted by Johannes Berg (Intel) as upstream commit <a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f718506edd2d9c6a308ded9d13c632bf7b7d5a2c">f718506edd2d</a>. Sasha Levin backported it to the stable trees: 7.0-stable and 6.18-stable review patches were sent on 2026-05-28.</p>
+          <p>The patch was sent to the linux-wireless mailing list on 2026-05-15 and accepted by Johannes Berg (Intel) as upstream commit <a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f718506edd2d9c6a308ded9d13c632bf7b7d5a2c">f718506edd2d</a>. Greg Kroah-Hartman backported it to the 6.18-stable and 7.0-stable trees.</p>
           <p>Other recent kernel work: a heap buffer overflow in the iSCSI target CHAP authentication code (<a href="iscsi-chap-base64-overflow">separate post</a>), and three patch series for the rtl8723bs staging WiFi driver (<a href="rtl8723bs-wifi-overflow">separate post</a>).</p>
           <div class="note">
-            The bug was introduced in v6.15 (February 2025) and affects every kernel release since. The stable backports cover 6.18 and 7.0. Kernels between v6.15 and v6.17 that are still in use should apply the patch manually or cherry-pick from the upstream commit.
+            The bug was introduced in v6.15 (February 2025) and affects every kernel release since. The fix has been backported to the 6.18 and 7.0 stable trees. Kernels between v6.15 and v6.17 that are still in use should apply the patch manually or cherry-pick from the upstream commit.
           </div>
         </section>
 
