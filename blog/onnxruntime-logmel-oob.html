@@ -5,7 +5,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
     <title>onnxruntime-extensions: Heap OOB Write in LogMelSpectrum</title>
-    <meta name="description" content="Heap out-of-bounds write in LogMel::Compute() inside microsoft/onnxruntime-extensions: the copy loop at speech_features.hpp:273–279 allocates the output buffer for mel_freq × expected_time floats but copies mag_time floats per row. Audio input longer than the model's configured chunk size pushes mag_time past expected_time, writing past the end of every row. For a standard Whisper 30-second model, one second of excess audio produces a 32KB overflow.">
+    <meta name="description" content="Heap out-of-bounds write in LogMel::Compute() inside microsoft/onnxruntime-extensions: the output buffer is allocated for mel_freq × expected_time floats, but the copy loop at speech_features.hpp:273–279 copies mag_time floats per row. Audio input longer than the model's configured chunk size pushes mag_time past expected_time, writing past the end of every row. For a standard Whisper 30-second model, one second of excess audio produces a 32KB overflow.">
     <meta property="og:title" content="onnxruntime-extensions: Heap OOB Write in LogMelSpectrum" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
@@ -152,7 +152,7 @@
         <header class="post-header">
           <h1>onnxruntime-extensions: Heap OOB Write in LogMelSpectrum</h1>
           <p class="post-subtitle">
-            A heap out-of-bounds write in the <code>LogMelSpectrum</code> custom op inside <code>microsoft/onnxruntime-extensions</code>. The copy loop in <code>LogMel::Compute()</code> allocates the output buffer for <code>mel_freq × expected_time</code> floats but copies <code>mag_time</code> floats per row. When audio input exceeds the model's configured chunk size, <code>mag_time &gt; expected_time</code> and every iteration of the loop writes past the end of its row's allocation. For a standard Whisper 30-second model, each second of audio past the chunk boundary adds 32KB of writes into adjacent heap memory.
+            A heap out-of-bounds write in the <code>LogMelSpectrum</code> custom op inside <code>microsoft/onnxruntime-extensions</code>. <code>LogMel::Compute()</code> allocates the output buffer for <code>mel_freq × expected_time</code> floats, but the copy loop reads <code>mag_time</code> elements per row. When audio input exceeds the model's configured chunk size, <code>mag_time &gt; expected_time</code> and every iteration of the loop writes past the end of its row's allocation. For a standard Whisper 30-second model, each second of audio past the chunk boundary adds 32KB of writes into adjacent heap memory.
           </p>
           <p class="post-meta">
             <span>Vulnerability Research • ML Inference</span>

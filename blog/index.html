@@ -190,6 +190,25 @@
         <section>
           <div class="posts-list">
 
+            <a class="post-card" href="onnxruntime-logmel-oob">
+              <h2 class="post-title">onnxruntime-extensions: Heap OOB Write in LogMelSpectrum</h2>
+              <p class="post-meta">
+                <span>Vulnerability Research • ML Inference</span>
+                <span>onnxruntime-extensions</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">C++</span>
+                <span class="tag">Heap OOB Write</span>
+                <span class="tag">ONNX Runtime</span>
+                <span class="tag">Whisper</span>
+                <span class="tag">ASAN</span>
+              </div>
+              <p class="post-excerpt">
+                Heap out-of-bounds write in <code>LogMel::Compute()</code> inside <code>microsoft/onnxruntime-extensions</code>. The copy loop at <code>speech_features.hpp:273–279</code> copies <code>mag_time</code> floats per row into a buffer allocated for <code>expected_time</code>. Audio longer than the model's chunk size causes <code>mag_time &gt; expected_time</code>, writing 32KB per second of excess audio past each row's slot. Reachable in any deployment with <code>AudioDecoder.max_samples = 0</code> or a mismatched <code>chunk_size</code>. Reported to MSRC (case 115486); fix landed in main on 2026-07-01 (commit 8e7b615).
+              </p>
+            </a>
+
             <a class="post-card" href="malwaretech-labs">
               <h2 class="post-title">MalwareTech Labs — Windows Malware RE Challenge Series</h2>
               <p class="post-meta">
@@ -265,25 +284,6 @@
               </div>
               <p class="post-excerpt">
                 Out-of-bounds array access in <code>ieee80211_ml_epcs()</code> in the mainline mac80211 WiFi stack. A 4-bit <code>link_id</code> field extracted from a PRIO_ACCESS ML element can be 0–15, but <code>sdata->link[]</code> has only 15 entries. Index 15 reads into <code>activate_links_work</code>, bypasses the NULL check, and crashes the kernel via <code>ieee80211_sta_wmm_params()</code>. Triggerable by any rogue WiFi 7 AP. Accepted by Johannes Berg, backported to stable.
-              </p>
-            </a>
-
-            <a class="post-card" href="onnxruntime-logmel-oob">
-              <h2 class="post-title">onnxruntime-extensions: Heap OOB Write in LogMelSpectrum</h2>
-              <p class="post-meta">
-                <span>Vulnerability Research • ML Inference</span>
-                <span>onnxruntime-extensions</span>
-                <span>by Alexandru Hossu</span>
-              </p>
-              <div class="post-tags">
-                <span class="tag">C++</span>
-                <span class="tag">Heap OOB Write</span>
-                <span class="tag">ONNX Runtime</span>
-                <span class="tag">Whisper</span>
-                <span class="tag">ASAN</span>
-              </div>
-              <p class="post-excerpt">
-                Heap out-of-bounds write in <code>LogMel::Compute()</code> inside <code>microsoft/onnxruntime-extensions</code>. The copy loop at <code>speech_features.hpp:273–279</code> allocates the output buffer for <code>mel_freq × expected_time</code> floats but copies <code>mag_time</code> floats per row. Audio longer than the model's chunk size causes <code>mag_time &gt; expected_time</code>, writing 32KB per second of excess audio past the allocation. Reachable in any deployment with <code>AudioDecoder.max_samples = 0</code> or a mismatched <code>chunk_size</code>. Reported to MSRC (case 115486); no fix issued.
               </p>
             </a>
 
