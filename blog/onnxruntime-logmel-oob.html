@@ -195,8 +195,7 @@ const int64_t expected_time = n_samples_ / hop_length_;
 /* speech_features.hpp:266 */
 buff = logmel.Allocate({mel_freq, expected_time});</code></pre>
           <p><code>mag_time</code> comes directly from the STFT output tensor shape with no validation against <code>expected_time</code>:</p>
-          <pre><code>/* speech_features.hpp:268-270 */
-const int64_t stft_time = stft_norm.Shape()[2];
+          <pre><code>const int64_t stft_time = stft_norm.Shape()[2];
 const int64_t mag_time = stft_time - 1;</code></pre>
           <p>The copy loop then runs <code>mag_time</code> elements per row into a buffer sized for <code>expected_time</code> elements per row:</p>
           <pre><code>/* speech_features.hpp:273-279 */
@@ -255,7 +254,6 @@ buffer allocated: 960000 bytes  (mel_freq=80 × expected_time=3000 × 4 bytes)
 overflow amount:   32000 bytes  (mel_freq=80 × 100 floats/row × 4 bytes)
 overflow per row:    400 bytes  (mag_time=3100 − expected_time=3000 = 100 floats)</code></pre>
           <p>ASAN catches the write at the last row (<code>m = 79</code>): <code>buff + 79 × 3000 = buff + 237000</code>, copying 3100 floats writes the final 100 past the end of the 960KB allocation. The reported write size of 12400 bytes is the full <code>std::copy</code> operation for that row (3100 × 4 bytes), of which the trailing 400 bytes are out of bounds.</p>
-          <p>I also confirmed the path over the wire using a Python client that sends a full iSCSI-style login sequence against a real LIO target running onnxruntime-extensions with <code>max_samples = 0</code>. The server returns an inference error response, but by that point the write has already completed.</p>
         </section>
 
         <section id="fix">
@@ -273,14 +271,14 @@ overflow per row:    400 bytes  (mag_time=3100 − expected_time=3000 = 100 floa
  }</code></pre>
           <p>An alternative is to return an error when <code>mag_time &gt; expected_time</code>, which makes the mismatch visible to the caller rather than silently dropping the excess frames. Either approach fixes the OOB write. The clip is the lower-risk change for deployed code since it preserves the output shape contract.</p>
           <div class="note">
-            No fix has been issued. MSRC assessed the report as moderate severity and below the threshold for immediate servicing, noting that the default bundled Whisper configuration is not vulnerable due to upstream truncation. Deployments with <code>AudioDecoder.max_samples = 0</code> or a mismatched <code>chunk_size</code> remain exposed.
+            This fix was applied in commit <a href="https://github.com/microsoft/onnxruntime-extensions/commit/8e7b615">8e7b615</a> ("Fix audio processing input validation issues", PR #1087) on 2026-07-01, using exactly this approach.
           </div>
         </section>
 
         <section id="disclosure">
           <h2>7. Disclosure</h2>
-          <p>Reported to Microsoft Security Response Center on 2026-05-04 (MSRC case 115486, VULN-185992). MSRC assessed the issue as moderate severity and confirmed reachability in configurations where <code>AudioDecoder.max_samples = 0</code> or where <code>chunk_size</code> is smaller than the effective audio cap, but concluded that the default bundled configuration is not affected and rated the case below the threshold for immediate servicing. No CVE was issued and no patch is planned. The report was shared with the engineering team for awareness.</p>
-          <p>The coordinated disclosure window requested by MSRC elapsed on 2026-07-09. This post is published after that date.</p>
+          <p>Reported to Microsoft Security Response Center on 2026-05-04 (MSRC case 115486, VULN-185992). MSRC assessed the issue as moderate severity and confirmed reachability in configurations where <code>AudioDecoder.max_samples = 0</code> or where <code>chunk_size</code> is smaller than the effective audio cap, but concluded that the default bundled configuration is not affected and rated the case below the threshold for immediate servicing. No CVE was issued. The report was shared with the engineering team for awareness.</p>
+          <p>The fix landed in the main branch on 2026-07-01 (commit <a href="https://github.com/microsoft/onnxruntime-extensions/commit/8e7b615">8e7b615</a>, PR #1087). The coordinated disclosure window requested by MSRC elapsed on 2026-07-09. This post is published after that date.</p>
           <p>Other recent work: an out-of-bounds array access in <code>ieee80211_ml_epcs()</code> in the mac80211 WiFi stack (<a href="mac80211-epcs-oob">separate post</a>), a heap buffer overflow in the iSCSI target CHAP authentication code (<a href="iscsi-chap-base64-overflow">separate post</a>), and a series of heap overflow and OOB read fixes in the rtl8723bs staging WiFi driver (<a href="rtl8723bs-wifi-overflow">separate post</a>).</p>
         </section>
 
