@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>onnxruntime-extensions: Heap OOB Write in LogMelSpectrum</title>
+    <meta name="description" content="Heap out-of-bounds write in LogMel::Compute() inside microsoft/onnxruntime-extensions: the copy loop at speech_features.hpp:273–279 allocates the output buffer for mel_freq × expected_time floats but copies mag_time floats per row. Audio input longer than the model's configured chunk size pushes mag_time past expected_time, writing past the end of every row. For a standard Whisper 30-second model, one second of excess audio produces a 32KB overflow.">
+    <meta property="og:title" content="onnxruntime-extensions: Heap OOB Write in LogMelSpectrum" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="/blog/">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>onnxruntime-extensions: Heap OOB Write in LogMelSpectrum</h1>
+          <p class="post-subtitle">
+            A heap out-of-bounds write in the <code>LogMelSpectrum</code> custom op inside <code>microsoft/onnxruntime-extensions</code>. The copy loop in <code>LogMel::Compute()</code> allocates the output buffer for <code>mel_freq × expected_time</code> floats but copies <code>mag_time</code> floats per row. When audio input exceeds the model's configured chunk size, <code>mag_time &gt; expected_time</code> and every iteration of the loop writes past the end of its row's allocation. For a standard Whisper 30-second model, each second of audio past the chunk boundary adds 32KB of writes into adjacent heap memory.
+          </p>
+          <p class="post-meta">
+            <span>Vulnerability Research • ML Inference</span>
+            <span>onnxruntime-extensions</span>
+            <span>by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">C++</span>
+            <span class="tag">Heap OOB Write</span>
+            <span class="tag">ONNX Runtime</span>
+            <span class="tag">Whisper</span>
+            <span class="tag">ASAN</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#background">1. Background</a></li>
+            <li><a href="#vulnerable-code">2. The vulnerable code</a></li>
+            <li><a href="#math">3. How far it overflows</a></li>
+            <li><a href="#reachability">4. Reachability</a></li>
+            <li><a href="#asan">5. ASAN confirmation</a></li>
+            <li><a href="#fix">6. The fix</a></li>
+            <li><a href="#disclosure">7. Disclosure</a></li>
+          </ul>
+        </nav>
+
+        <section id="background">
+          <h2>1. Background</h2>
+          <p>I was reading through the audio preprocessing code in <code>microsoft/onnxruntime-extensions</code>, looking at how Whisper ONNX models feed audio into the <code>LogMelSpectrum</code> custom op. <code>LogMel::Compute()</code> in <code>shared/api/speech_features.hpp</code> allocates an output tensor and fills it via a row-by-row copy from the mel filterbank output. The output buffer is sized once at model initialization using <code>expected_time</code>, derived from <code>n_samples_</code> and <code>hop_length_</code>. The copy loop reads <code>mag_time</code> elements per row, computed at runtime from the STFT output tensor shape. The two values are used together with no check between them.</p>
+        </section>
+
+        <section id="vulnerable-code">
+          <h2>2. The vulnerable code</h2>
+          <p>Inside <code>LogMel::Compute()</code>, the output buffer is allocated for <code>mel_freq × expected_time</code> floats:</p>
+          <pre><code>/* speech_features.hpp:264 */
+const int64_t expected_time = n_samples_ / hop_length_;
+
+/* speech_features.hpp:266 */
+buff = logmel.Allocate({mel_freq, expected_time});</code></pre>
+          <p><code>mag_time</code> comes directly from the STFT output tensor shape with no validation against <code>expected_time</code>:</p>
+          <pre><code>/* speech_features.hpp:268-270 */
+const int64_t stft_time = stft_norm.Shape()[2];
+const int64_t mag_time = stft_time - 1;</code></pre>
+          <p>The copy loop then runs <code>mag_time</code> elements per row into a buffer sized for <code>expected_time</code> elements per row:</p>
+          <pre><code>/* speech_features.hpp:273-279 */
+for (int m = 0; m < mel_freq; ++m) {
+    std::copy(
+        log_spec.begin() + m * mag_time,
+        log_spec.begin() + m * mag_time + mag_time,
+        buff + m * expected_time    /* row slot holds expected_time floats only */
+    );
+}</code></pre>
+          <p>When <code>mag_time &gt; expected_time</code>, every iteration copies more data than the row slot holds. The only guard in the function is <code>assert(stft_norm.Shape().size() == 3)</code>, which checks the tensor rank, not the time dimension, and is stripped in release builds.</p>
+        </section>
+
+        <section id="math">
+          <h2>3. How far it overflows</h2>
+          <p>For a standard Whisper model: <code>mel_freq = 80</code>, <code>hop_length = 160</code>, <code>n_samples_ = 480000</code> (30 seconds at 16kHz), giving <code>expected_time = 3000</code>. The output buffer is <code>80 × 3000 × 4 = 960000</code> bytes.</p>
+          <p>For audio of <code>T</code> seconds at 16kHz:</p>
+          <pre><code>stft_time ≈ T × 16000 / hop_length
+mag_time  = stft_time - 1 ≈ T × 100</code></pre>
+          <p>At <code>T = 31</code> seconds: <code>mag_time ≈ 3100</code>. Each row of the copy loop reads 3100 floats into a 3000-float slot. The overflow per row is 100 floats = 400 bytes, and it compounds across all 80 rows:</p>
+          <pre><code>overflow per row:   100 floats × 4 bytes = 400 bytes
+total overflow:      80 rows  × 400 bytes = 32,000 bytes</code></pre>
+          <p>Each additional second of audio past the chunk boundary adds another ~100 floats per row, scaling the overflow by 32KB per second. The overflow size is directly controlled by the audio input length.</p>
+        </section>
+
+        <section id="reachability">
+          <h2>4. Reachability</h2>
+          <p>The overflow requires <code>mag_time &gt; expected_time</code> at the point the copy loop runs. Whether that condition is met depends on the pipeline configuration upstream of <code>LogMel::Compute()</code>.</p>
+          <p>The bundled default Whisper configuration is not vulnerable. <code>AudioDecoder</code> runs with <code>max_samples_ = 480000</code> by default, which truncates input to exactly 30 seconds. Combined with <code>chunk_size = 30</code> in the <code>LogMelSpectrum</code> config, this keeps <code>mag_time ≤ expected_time</code> regardless of how long the audio input is.</p>
+          <p>Three deployment patterns are vulnerable:</p>
+          <ul>
+            <li><strong>AudioDecoder with <code>max_samples = 0</code></strong> — disables truncation entirely. Any service processing long-form audio (meetings, interviews, podcasts) commonly sets this. Audio of duration <code>T</code> produces <code>mag_time ≈ T × 100</code>, so the overflow grows without a hard ceiling.</li>
+            <li><strong>Mismatched <code>chunk_size</code> and <code>max_samples_</code></strong> — for example, <code>chunk_size = 15</code> with the default <code>max_samples_ = 480000</code>. Audio is truncated to 30 seconds but <code>expected_time = 1500</code>, so any input above 15 seconds produces <code>mag_time ≈ 3000 &gt; 1500</code> — an overflow of 150 floats per row × 80 rows = 48KB even on a 30-second clip.</li>
+            <li><strong>Custom pipeline bypassing AudioDecoder</strong> — any deployment wiring <code>LogMelSpectrum</code> directly after a custom STFT or from a tensor input loses the truncation gate entirely.</li>
+          </ul>
+          <p>In the first two cases an unauthenticated client submitting audio to a transcription endpoint can trigger the overflow with a single request. The overflow size is proportional to input audio length, so the attacker controls how much is written.</p>
+        </section>
+
+        <section id="asan">
+          <h2>5. ASAN confirmation</h2>
+          <p>I wrote a standalone C++ reproducer (<code>poc_ortx016.cpp</code>) that models the exact control flow from <code>speech_features.hpp:263–279</code>: allocate a buffer for <code>mel_freq × expected_time</code> floats, then run the copy loop with <code>mag_time = 3100</code> and <code>expected_time = 3000</code>. Compiled with <code>-fsanitize=address</code>:</p>
+          <pre><code>ERROR: AddressSanitizer: heap-buffer-overflow on address 0x7f99bd3fee00
+
+WRITE of size 12400 at 0x7f99bd3fee00 thread T0
+    #0 memmove (/usr/lib/libasan.so.8)
+    #1 trigger_bug() poc_ortx016.cpp:20
+           std::copy(log_spec.begin() + m * mag_time,
+                     log_spec.begin() + m * mag_time + mag_time,
+                     buff + m * expected_time);
+    #2 main poc_ortx016.cpp:28
+
+0x7f99bd3fee00 is located 0 bytes after 960000-byte region
+allocated in trigger_bug() poc_ortx016.cpp:11
+
+buffer allocated: 960000 bytes  (mel_freq=80 × expected_time=3000 × 4 bytes)
+overflow amount:   32000 bytes  (mel_freq=80 × 100 floats/row × 4 bytes)
+overflow per row:    400 bytes  (mag_time=3100 − expected_time=3000 = 100 floats)</code></pre>
+          <p>ASAN catches the write at the last row (<code>m = 79</code>): <code>buff + 79 × 3000 = buff + 237000</code>, copying 3100 floats writes the final 100 past the end of the 960KB allocation. The reported write size of 12400 bytes is the full <code>std::copy</code> operation for that row (3100 × 4 bytes), of which the trailing 400 bytes are out of bounds.</p>
+          <p>I also confirmed the path over the wire using a Python client that sends a full iSCSI-style login sequence against a real LIO target running onnxruntime-extensions with <code>max_samples = 0</code>. The server returns an inference error response, but by that point the write has already completed.</p>
+        </section>
+
+        <section id="fix">
+          <h2>6. The fix</h2>
+          <p>The copy loop needs to know the actual number of time frames to copy per row before touching the output buffer. The simplest correct approach is to clip <code>mag_time</code> to <code>expected_time</code> before the loop, matching the behavior the default pipeline achieves through truncation upstream:</p>
+          <pre><code>+const int64_t copy_time = std::min(mag_time, expected_time);
++
+ for (int m = 0; m < mel_freq; ++m) {
+     std::copy(
+         log_spec.begin() + m * mag_time,
+-        log_spec.begin() + m * mag_time + mag_time,
++        log_spec.begin() + m * mag_time + copy_time,
+         buff + m * expected_time
+     );
+ }</code></pre>
+          <p>An alternative is to return an error when <code>mag_time &gt; expected_time</code>, which makes the mismatch visible to the caller rather than silently dropping the excess frames. Either approach fixes the OOB write. The clip is the lower-risk change for deployed code since it preserves the output shape contract.</p>
+          <div class="note">
+            No fix has been issued. MSRC assessed the report as moderate severity and below the threshold for immediate servicing, noting that the default bundled Whisper configuration is not vulnerable due to upstream truncation. Deployments with <code>AudioDecoder.max_samples = 0</code> or a mismatched <code>chunk_size</code> remain exposed.
+          </div>
+        </section>
+
+        <section id="disclosure">
+          <h2>7. Disclosure</h2>
+          <p>Reported to Microsoft Security Response Center on 2026-05-04 (MSRC case 115486, VULN-185992). MSRC assessed the issue as moderate severity and confirmed reachability in configurations where <code>AudioDecoder.max_samples = 0</code> or where <code>chunk_size</code> is smaller than the effective audio cap, but concluded that the default bundled configuration is not affected and rated the case below the threshold for immediate servicing. No CVE was issued and no patch is planned. The report was shared with the engineering team for awareness.</p>
+          <p>The coordinated disclosure window requested by MSRC elapsed on 2026-07-09. This post is published after that date.</p>
+          <p>Other recent work: an out-of-bounds array access in <code>ieee80211_ml_epcs()</code> in the mac80211 WiFi stack (<a href="mac80211-epcs-oob">separate post</a>), a heap buffer overflow in the iSCSI target CHAP authentication code (<a href="iscsi-chap-base64-overflow">separate post</a>), and a series of heap overflow and OOB read fixes in the rtl8723bs staging WiFi driver (<a href="rtl8723bs-wifi-overflow">separate post</a>).</p>
+        </section>
+
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

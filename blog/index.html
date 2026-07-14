@@ -268,6 +268,25 @@
               </p>
             </a>
 
+            <a class="post-card" href="onnxruntime-logmel-oob">
+              <h2 class="post-title">onnxruntime-extensions: Heap OOB Write in LogMelSpectrum</h2>
+              <p class="post-meta">
+                <span>Vulnerability Research • ML Inference</span>
+                <span>onnxruntime-extensions</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">C++</span>
+                <span class="tag">Heap OOB Write</span>
+                <span class="tag">ONNX Runtime</span>
+                <span class="tag">Whisper</span>
+                <span class="tag">ASAN</span>
+              </div>
+              <p class="post-excerpt">
+                Heap out-of-bounds write in <code>LogMel::Compute()</code> inside <code>microsoft/onnxruntime-extensions</code>. The copy loop at <code>speech_features.hpp:273–279</code> allocates the output buffer for <code>mel_freq × expected_time</code> floats but copies <code>mag_time</code> floats per row. Audio longer than the model's chunk size causes <code>mag_time &gt; expected_time</code>, writing 32KB per second of excess audio past the allocation. Reachable in any deployment with <code>AudioDecoder.max_samples = 0</code> or a mismatched <code>chunk_size</code>. Reported to MSRC (case 115486); no fix issued.
+              </p>
+            </a>
+
             <a class="post-card" href="wraithstep">
               <h2 class="post-title">WRAITHSTEP (ROCSC Finals 2026) — Linux Implant Forensics</h2>
               <p class="post-meta">
