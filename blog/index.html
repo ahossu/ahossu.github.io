@@ -190,6 +190,44 @@
         <section>
           <div class="posts-list">
 
+            <a class="post-card" href="wincapture-omnictf-2026">
+              <h2 class="post-title">WINCAPTURE (OmniCTF 2026 Quals) — Windows Kernel Double-Fetch Race</h2>
+              <p class="post-meta">
+                <span>pwn • Windows Kernel • Reverse Engineering</span>
+                <span>OmniCTF 2026 Quals</span>
+                <span>Challenge by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Windows Kernel</span>
+                <span class="tag">Named Pipe</span>
+                <span class="tag">Double-Fetch</span>
+                <span class="tag">Race Condition</span>
+                <span class="tag">IDA / Ghidra</span>
+              </div>
+              <p class="post-excerpt">
+                Stripped Windows kernel driver for a packet capture tool. <code>IOCTL_COMMIT_CAPTURE</code> reads <code>g_shared_pkt_size[rid]</code> twice — once to validate against <code>MAX_CAPTURE_SIZE</code>, then again after releasing the region lock. A concurrent <code>IOCTL_WRITE_SHARED</code> on a second pipe handle raises the size between the two reads, overflowing <code>g_capture_buf</code> into the adjacent bump-allocated <code>key_object_t</code> and flipping the <code>granted</code> flag. Correct canary placement at the overflow offset is required; blind fill fails the canary check even when the race is won.
+              </p>
+            </a>
+
+            <a class="post-card" href="credvault-omnictf-2026">
+              <h2 class="post-title">CREDVAULT (OmniCTF 2026 Quals) — Android Parcel Format Mismatch</h2>
+              <p class="post-meta">
+                <span>rev • pwn • Android</span>
+                <span>OmniCTF 2026 Quals</span>
+                <span>Challenge by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Android</span>
+                <span class="tag">Parcel Mismatch</span>
+                <span class="tag">IDA / Ghidra</span>
+                <span class="tag">Python</span>
+                <span class="tag">CVE-2021-0928 class</span>
+              </div>
+              <p class="post-excerpt">
+                Stripped Linux ELF simulating <code>com.android.credentialservice.CredVaultService</code>. Two Parcel parsers operate on the same 24-byte blob with different field layouts: v1 has a <code>format_tag</code> prefix that v2 removed. The elevation handler passes <code>cred_buf</code> to the v2 parser instead of <code>cred_buf + 4</code>, shifting every v2 field by one slot. Setting <code>user_uid = AUTH_ELEVATED (0xCA110042)</code> satisfies v1 (field is unchecked) while landing exactly on v2's <code>auth_level</code> check. Same root cause as CVE-2021-0928, CVE-2023-20963, and CVE-2024-49746.
+              </p>
+            </a>
+
             <a class="post-card" href="onnxruntime-logmel-oob">
               <h2 class="post-title">onnxruntime-extensions: Heap OOB Write in LogMelSpectrum</h2>
               <p class="post-meta">
