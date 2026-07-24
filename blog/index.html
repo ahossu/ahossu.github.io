@@ -190,6 +190,25 @@
         <section>
           <div class="posts-list">
 
+            <a class="post-card" href="gdk-pixbuf-icns-oob">
+              <h2 class="post-title">gdk-pixbuf ICNS: Heap OOB Read in <code>uncompress()</code></h2>
+              <p class="post-meta">
+                <span>Vulnerability Research • Image Parsing</span>
+                <span>gdk-pixbuf</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">C</span>
+                <span class="tag">Heap OOB Read</span>
+                <span class="tag">gdk-pixbuf</span>
+                <span class="tag">GTK</span>
+                <span class="tag">ASAN</span>
+              </div>
+              <p class="post-excerpt">
+                Heap OOB read in gdk-pixbuf's ICNS loader. <code>uncompress()</code> takes a pixel count and a source pointer but no source length, reading from the compressed stream until <code>size×size</code> pixels are decoded regardless of how many bytes the block actually contains. <code>load_icon()</code> computes the valid payload length from the block header but never passes it to the decompressor. A crafted <code>.icns</code> file with a zero-byte icon payload triggers an unbounded read into adjacent heap memory — all four legacy RLE icon sizes affected, reachable from any GTK application. Unfixed as of 2026-07-24; 90-day window elapsed.
+              </p>
+            </a>
+
             <a class="post-card" href="wincapture-omnictf-2026">
               <h2 class="post-title">WINCAPTURE (OmniCTF 2026 Quals) — Windows Kernel Double-Fetch Race</h2>
               <p class="post-meta">

