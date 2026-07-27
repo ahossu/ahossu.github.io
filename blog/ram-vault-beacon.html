@@ -172,6 +172,7 @@
         <nav class="post-toc">
           <p class="post-toc-title">On this page</p>
           <ul>
+            <li><a href="#setup">Challenge setup</a></li>
             <li><a href="#overview">1. Malware overview</a></li>
             <li><a href="#pcap">2. PCAP: extracting ts_window</a></li>
             <li><a href="#memdump">3. Memory dump: vault mapping and env vars</a></li>
@@ -181,6 +182,24 @@
             <li><a href="#solve">7. Complete solve script</a></li>
           </ul>
         </nav>
+
+        <section id="setup">
+          <h2>Challenge setup</h2>
+          <p>The challenge was presented at UNBR Quals 2026. You receive three forensic artifacts, each collected from the same infected Linux machine:</p>
+          <ul>
+            <li><code>capture.pcap</code> — a network packet capture taken during the infection window</li>
+            <li><code>memory.lime</code> — a full memory dump acquired with the LiME kernel module while the malware was running</li>
+            <li>A disk image — needed only for <code>/etc/machine-id</code>, the machine's persistent hardware identifier</li>
+          </ul>
+          <p>The scenario: a Linux malware sample ran on the victim machine, stored an AES-encrypted flag in a private anonymous <code>mmap</code> region (never written to disk), and sent a beacon over HTTP with a timestamp. The goal is to reconstruct the 32-byte XChaCha20-Poly1305 decryption key and recover the flag from the memory dump.</p>
+          <p>The key is derived from five ingredients, each hiding in a different artifact. Missing any one of them makes key derivation fail silently: the decryption appears to succeed but produces garbage.</p>
+          <ul>
+            <li><strong>PCAP</strong>: <code>ts_window</code> — a windowed Unix timestamp from the HTTP POST body</li>
+            <li><strong>Memory dump</strong>: three environment variables (<code>TASK_ID</code>, <code>KDF_SALT</code>, <code>STAGE_ARGS_B64</code>) and the vault bytes themselves</li>
+            <li><strong>Disk image</strong>: <code>/etc/machine-id</code></li>
+          </ul>
+          <p>Overall approach: extract <code>ts_window</code> from the HTTP POST in the PCAP → locate the malware process in the memory dump and pull its environment variables and the anonymous vault mapping → get <code>machine-id</code> from the disk image → feed all five into the SHA256 key derivation chain → decrypt the 48-byte XChaCha20-Poly1305 ciphertext.</p>
+        </section>
 
         <section id="overview">
           <h2>1. Malware overview</h2>

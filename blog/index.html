@@ -537,7 +537,7 @@
                 <span class="tag">SHA256</span>
               </div>
               <p class="post-excerpt">
-                Malware sometimes stores sensitive data in anonymous memory regions that vanish the moment the process ends — no file on disk, nothing obvious in a snapshot. This forensics challenge requires combining three separate artifacts (a network capture, a memory dump, and a disk image) to reconstruct how the malware distributed its payload across forked child processes hidden in an anonymous <code>mmap</code> region. Rebuild the SHA256 key chain from process relationships and decrypt the XChaCha20-Poly1305-encrypted payload.
+                Malware sometimes stores sensitive data in anonymous memory regions that vanish the moment the process ends — no file on disk, nothing obvious in a snapshot. This forensics challenge presents a Linux implant that encrypts the flag with XChaCha20-Poly1305 and stores it only in an anonymous <code>mmap</code> region, while beaconing its C2 over HTTP with a windowed timestamp. Recovering the flag requires five key ingredients scattered across three separate artifacts: a windowed timestamp from the network capture, three environment variables (<code>TASK_ID</code>, <code>KDF_SALT</code>, <code>STAGE_ARGS_B64</code>) from the memory dump, and <code>/etc/machine-id</code> from the disk image. Feed all five into the SHA256 derivation chain — miss any one and the decryption fails silently with garbage output.
               </p>
             </a>
 

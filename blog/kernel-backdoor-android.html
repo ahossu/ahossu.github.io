@@ -172,6 +172,7 @@
         <nav class="post-toc">
           <p class="post-toc-title">On this page</p>
           <ul>
+            <li><a href="#setup">Challenge setup</a></li>
             <li><a href="#initial">1. Initial recon</a></li>
             <li><a href="#module">2. Analyzing module.ko</a></li>
             <li><a href="#native">3. Extracting the token from libnative.so</a></li>
@@ -180,6 +181,18 @@
             <li><a href="#frida">6. Alternative: Frida approach</a></li>
           </ul>
         </nav>
+
+        <section id="setup">
+          <h2>Challenge setup</h2>
+          <p>The challenge was presented at UNBR Finals 2026. You receive three files: <code>SystemInfo.apk</code>, a <code>bzImage</code> (the pre-built Android kernel for the emulator), and a README stating the app runs against an Android 12 x86_64 emulator. From the player's perspective, <code>SystemInfo</code> looks like a completely mundane utility — the UI shows device model, battery percentage, and storage stats. Nothing interactive, nothing obviously suspicious.</p>
+          <p>The challenge has two layers hidden inside the APK:</p>
+          <ul>
+            <li><code>assets/module.ko</code> — a compiled Linux kernel module. Android apps normally have no mechanism to interact with kernel modules, let alone ship one. This doesn't load itself; you have to do it manually.</li>
+            <li><code>lib/x86_64/libnative.so</code> — a native library that holds the 16-byte decryption token in obfuscated form, split across two 8-byte arrays and XOR'd with a single key byte.</li>
+          </ul>
+          <p>Once you manually load <code>module.ko</code> with <code>insmod</code>, it registers a character device at <code>/dev/ctf</code>. The device's only handler accepts <code>ioctl(0x1337)</code> with a 16-byte buffer: it uses that buffer as an AES-128 key to decrypt a stored ciphertext and writes the plaintext flag back into the same buffer. The challenge is simply to find the correct 16-byte token.</p>
+          <p>Overall approach: unpack the APK → locate <code>module.ko</code> and <code>libnative.so</code> → analyze <code>module.ko</code> to understand the ioctl interface → extract the token by static analysis of the native library → load the module → run the exploit.</p>
+        </section>
 
         <section id="initial">
           <h2>1. Initial recon</h2>
