@@ -205,7 +205,7 @@
                 <span class="tag">ASAN</span>
               </div>
               <p class="post-excerpt">
-                Heap OOB read in gdk-pixbuf's ICNS loader. <code>uncompress()</code> takes a pixel count and a source pointer but no source length, reading from the compressed stream until <code>size×size</code> pixels are decoded regardless of how many bytes the block actually contains. <code>load_icon()</code> computes the valid payload length from the block header but never passes it to the decompressor. A crafted <code>.icns</code> file with a zero-byte icon payload triggers an unbounded read into adjacent heap memory — all four legacy RLE icon sizes affected, reachable from any GTK application. Unfixed as of 2026-07-24; 90-day window elapsed.
+                gdk-pixbuf is the image-loading library used by GTK — the toolkit behind GNOME, gedit, and most Linux desktop applications. It parses Apple icon (.icns) files, and a crafted icon can make it read past the end of a heap buffer, potentially crashing the application or leaking adjacent memory just by opening a rogue file. <code>uncompress()</code> takes a pixel count and a source pointer but no source length, reading compressed pixel data until <code>size×size</code> pixels are decoded regardless of how many bytes the block actually contains. <code>load_icon()</code> computes the valid payload length from the block header but never forwards it to the decompressor. All four legacy RLE icon sizes (16×16 through 128×128) are affected, reachable from any GTK application that opens a file dialog. Unfixed as of 2026-07-24; 90-day disclosure window elapsed.
               </p>
             </a>
 
@@ -224,7 +224,7 @@
                 <span class="tag">IDA / Ghidra</span>
               </div>
               <p class="post-excerpt">
-                Stripped Windows kernel driver for a packet capture tool. <code>IOCTL_COMMIT_CAPTURE</code> reads <code>g_shared_pkt_size[rid]</code> twice — once to validate against <code>MAX_CAPTURE_SIZE</code>, then again after releasing the region lock. A concurrent <code>IOCTL_WRITE_SHARED</code> on a second pipe handle raises the size between the two reads, overflowing <code>g_capture_buf</code> into the adjacent bump-allocated <code>key_object_t</code> and flipping the <code>granted</code> flag. Correct canary placement at the overflow offset is required; blind fill fails the canary check even when the race is won.
+                A Windows kernel driver controls hardware at the deepest level of the OS. This CTF challenge presents a stripped driver for a packet-capture tool where two requests racing against each other trick it into overflowing a kernel buffer — the same vulnerability class behind real privilege-escalation exploits. <code>IOCTL_COMMIT_CAPTURE</code> reads <code>g_shared_pkt_size[rid]</code> twice — once to validate against <code>MAX_CAPTURE_SIZE</code>, then again after releasing the region lock. A concurrent <code>IOCTL_WRITE_SHARED</code> on a second pipe handle raises the size between the two reads, overflowing <code>g_capture_buf</code> into the adjacent bump-allocated <code>key_object_t</code> and flipping the <code>granted</code> flag. Correct canary placement at the overflow offset is required; blind fill fails the canary check even when the race is won.
               </p>
             </a>
 
@@ -243,7 +243,7 @@
                 <span class="tag">CVE-2021-0928 class</span>
               </div>
               <p class="post-excerpt">
-                Stripped Linux ELF simulating <code>com.android.credentialservice.CredVaultService</code>. Two Parcel parsers operate on the same 24-byte blob with different field layouts: v1 has a <code>format_tag</code> prefix that v2 removed. The elevation handler passes <code>cred_buf</code> to the v2 parser instead of <code>cred_buf + 4</code>, shifting every v2 field by one slot. Setting <code>user_uid = AUTH_ELEVATED (0xCA110042)</code> satisfies v1 (field is unchecked) while landing exactly on v2's <code>auth_level</code> check. Same root cause as CVE-2021-0928, CVE-2023-20963, and CVE-2024-49746.
+                Android apps pass data between system services using a format called Parcel — a compact serialized byte stream. This CTF challenge exploits a real vulnerability class (same root cause as CVE-2021-0928, CVE-2023-20963, CVE-2024-49746) where two components each expect a different layout of the same byte blob, and the one-field difference lets a crafted value pass as harmless to one parser while landing as an elevated-privilege flag in the other. Two Parcel parsers operate on the same 24-byte blob: v1 has a <code>format_tag</code> prefix that v2 removed, but the elevation handler passes <code>cred_buf</code> to the v2 parser instead of <code>cred_buf + 4</code>. Setting <code>user_uid = AUTH_ELEVATED (0xCA110042)</code> satisfies v1 (field unchecked) while landing exactly on v2's <code>auth_level</code> check.
               </p>
             </a>
 
@@ -284,7 +284,7 @@
                 <span class="tag">JPEG Polyglot</span>
               </div>
               <p class="post-excerpt">
-                Eleven PE32+ x86-64 Windows binaries, solved entirely through static analysis. Covers string concealment in <code>.rdata</code>, on the stack, and in Win32 resources; C2 protocol reversing (URLDownloadToFile, two-phase HTTP, XOR-encrypted DLL over MDropper UA); ROL5, XOR with DOS-stub key derivation, and PEB walk + SHA1 by ordinal + RC4 shellcode layers; a 3-opcode bytecode VM; and a multi-stage LOLBIN dropper that harvests Chrome's cache for a JPEG polyglot DLL decrypted with AES-256-CBC via the Windows legacy Crypto API.
+                Real malware rarely announces itself — it hides strings, obfuscates control flow, and chains multiple layers before the payload appears. This challenge series (eleven real-style Windows binaries) teaches you to dismantle those techniques using only a disassembler, with no dynamic execution. Each sample is solved purely through static analysis in Binary Ninja: string concealment in <code>.rdata</code>, on the stack, and in Win32 resources; C2 protocol reversing (URLDownloadToFile, two-phase HTTP, XOR-encrypted DLL over MDropper UA); ROL5/XOR/PEB-walk + SHA1-by-ordinal + RC4 shellcode layers; a 3-opcode bytecode VM; and a multi-stage LOLBIN dropper that harvests Chrome's cache for a JPEG polyglot DLL decrypted with AES-256-CBC via the Windows legacy Crypto API.
               </p>
             </a>
 
@@ -303,7 +303,7 @@
                 <span class="tag">Ghidra</span>
               </div>
               <p class="post-excerpt">
-                NorthStar License Verifier — three layers of protection used in real commercial apps. <code>RegisterNatives</code> hides the JNI binding (no exported symbol), OLLVM-style control flow flattening turns the verification function into a 124-node state machine, and the AES-128-CBC key is split across two XOR'd arrays in <code>.rodata</code>. Deobfuscate with angr/deflat.py, extract the key material from Ghidra, and decrypt the embedded license.
+                Commercial Android apps often use obfuscation to prevent reverse engineering of their logic. This CTF challenge stacks three real-world protection layers on a license verifier: hiding the native code entry point so disassemblers can't find it, scrambling the control flow into a 124-state machine, then splitting the encryption key across two separate data arrays. <code>RegisterNatives</code> hides the JNI binding (no exported symbol), OLLVM-style control flow flattening transforms the verification function, and the AES-128-CBC key is split across two XOR'd arrays in <code>.rodata</code>. Deobfuscate with angr/deflat.py, extract the key material from Ghidra, and decrypt the embedded license.
               </p>
             </a>
 
@@ -322,7 +322,7 @@
                 <span class="tag">KASAN</span>
               </div>
               <p class="post-excerpt">
-                Heap buffer overflow in the iSCSI target CHAP authentication code, reachable before password validation. The BASE64 branch of <code>chap_server_compute_hash()</code> passes up to 127 attacker-controlled characters to <code>chap_base64_decode()</code> without a length check, writing 95 bytes into a 16 or 32-byte heap object. Attacker needs the CHAP username only. Confirmed with KASAN on linux-next, patch submitted to Martin K. Petersen with <code>Fixes: 1e5733883421</code>.
+                iSCSI lets servers expose raw block storage over a network as if it were a locally attached drive. The CHAP handshake is supposed to authenticate who can connect — but this vulnerability allows an attacker on the network to overflow a kernel heap buffer before authentication completes, using only a crafted username. The BASE64 branch of <code>chap_server_compute_hash()</code> passes up to 127 attacker-controlled characters to <code>chap_base64_decode()</code> without a length check, writing 95 bytes into a 16- or 32-byte heap object. Confirmed with KASAN on linux-next, patch submitted to Martin K. Petersen with <code>Fixes: 1e5733883421</code>.
               </p>
             </a>
 
@@ -341,7 +341,7 @@
                 <span class="tag">Kernel Crash</span>
               </div>
               <p class="post-excerpt">
-                Out-of-bounds array access in <code>ieee80211_ml_epcs()</code> in the mainline mac80211 WiFi stack. A 4-bit <code>link_id</code> field extracted from a PRIO_ACCESS ML element can be 0–15, but <code>sdata->link[]</code> has only 15 entries. Index 15 reads into <code>activate_links_work</code>, bypasses the NULL check, and crashes the kernel via <code>ieee80211_sta_wmm_params()</code>. Triggerable by any rogue WiFi 7 AP. Accepted by Johannes Berg, backported to stable.
+                Every Linux system with WiFi uses mac80211, the kernel's shared wireless networking stack. WiFi 7 added a new protocol feature (EPCS — Emergency Preparedness Communications Service), and its implementation has a classic one-off mistake: a 4-bit field from a rogue access point's beacon frame can index into a 15-slot array with values up to 15. A 4-bit <code>link_id</code> from a PRIO_ACCESS ML element can be 0–15, but <code>sdata->link[]</code> has only 15 entries. Index 15 reads into <code>activate_links_work</code>, bypasses the NULL check, and crashes the kernel via <code>ieee80211_sta_wmm_params()</code>. Any rogue WiFi 7 AP within radio range can trigger it with no authentication required. Accepted by Johannes Berg, backported to stable.
               </p>
             </a>
 
@@ -360,7 +360,7 @@
                 <span class="tag">DNS Exfiltration</span>
               </div>
               <p class="post-excerpt">
-                Three-stage Linux forensics challenge: trace a fileless dropper running from a <code>memfd_create</code> file descriptor back to a udev <code>/dev/random</code> persistence rule, reverse the RC4-obfuscated PAM backdoor that replaced <code>pam_pkcs11.so</code>, and decode base32-encoded credentials tunneled over DNS.
+                When an attacker wants to persist on a Linux system without leaving obvious files, they use the OS against itself — running code entirely in memory, hooking the authentication system, and hiding communications inside normal-looking DNS traffic. This forensics challenge traces the full chain: find a program running with no file on disk (via <code>memfd_create</code>), trace its persistence back to a udev <code>/dev/random</code> rule, reverse the RC4-obfuscated PAM module that replaced <code>pam_pkcs11.so</code>, and decode base32-encoded credentials tunneled over DNS queries.
               </p>
             </a>
 
@@ -379,7 +379,7 @@
                 <span class="tag">Named Pipe</span>
               </div>
               <p class="post-excerpt">
-                Stripped x64 kernel driver with three IOCTL handlers — two documented, one hidden. The undocumented handler writes directly to the driver's auth variable with no privilege check. Find function code <code>0x8800001C</code>, recover <code>ADMIN_TOKEN = 0xC0FFEE1337DEAD01</code>, and exploit the same diagnostic backdoor pattern behind real BYOVD attacks.
+                Kernel drivers are among the most privileged code on a Windows system — they run with full hardware access and can bypass every user-space security boundary. This challenge presents a sensor-monitoring driver with a documented interface and a hidden backdoor, the same pattern behind real BYOVD (Bring Your Own Vulnerable Driver) attacks used by ransomware and APT groups. Two IOCTL handlers are public; a third, unlisted handler at code <code>0x8800001C</code> writes directly to the driver's auth variable with no privilege check. Reverse the token <code>ADMIN_TOKEN = 0xC0FFEE1337DEAD01</code>, send the undocumented command, and demonstrate how a single missing check in kernel space voids all user-mode protections.
               </p>
             </a>
 
@@ -405,7 +405,7 @@
                 <span class="tag">CVE-2026-64536</span>
               </div>
               <p class="post-excerpt">
-                Heap overflow in <code>OnAuthClient()</code> exploitable by any rogue AP within radio range — no auth required, any device affected via the auth algorithm toggle. Three initial series plus two additional patches covering thirteen functions across the driver, including a separate one-byte WPA IE overflow reachable via nl80211. All eight commits landed in staging-linus on 2026-07-07, backported to 7.1, 6.18, 6.12, 6.6, 6.1, 5.15, and 5.10. CVEs assigned: CVE-2026-64440, CVE-2026-64441, CVE-2026-64442, CVE-2026-64443, CVE-2026-64444, CVE-2026-64445, CVE-2026-64446, CVE-2026-64536.
+                The rtl8723bs is a cheap WiFi+Bluetooth chip found in millions of budget laptops and single-board computers. Its Linux kernel driver accepted 802.11 management frames without checking their length, meaning a rogue access point within radio range could corrupt kernel heap memory just by transmitting a crafted packet — no user interaction, no authentication required. <code>OnAuthClient()</code> was the primary entry point, but missing bounds checks span thirteen functions across the driver. Three patch series plus a separate nl80211 fix, eight commits total, backported to every active LTS tree. CVEs assigned: CVE-2026-64440, CVE-2026-64441, CVE-2026-64442, CVE-2026-64443, CVE-2026-64444, CVE-2026-64445, CVE-2026-64446, CVE-2026-64536.
               </p>
             </a>
 
@@ -424,7 +424,7 @@
                 <span class="tag">Heap OOB</span>
               </div>
               <p class="post-excerpt">
-                Three bugs found in a single audit of VLC 4.0-dev: a tautological guard in the Smooth Streaming parser that dereferences <code>chunks.end()</code>, a uint32_t overflow that freezes VLC permanently on a crafted ID3 tag, and a uint16_t underflow in the AMT IPv6 handler that moves a buffer pointer ~64 KB before its allocation.
+                VLC is the world's most popular open-source media player, installed on hundreds of millions of machines. A single focused audit of the 4.0-dev branch found three separate bugs, each reachable by opening a crafted media file or stream: a tautological guard in the Smooth Streaming parser that unconditionally dereferences <code>chunks.end()</code> on an empty list, a <code>uint32_t</code> overflow in the ID3 tag parser that freezes VLC permanently on a crafted audio file, and a <code>uint16_t</code> underflow in the AMT IPv6 handler that moves a buffer pointer ~64 KB before its allocation.
               </p>
             </a>
 
@@ -443,7 +443,7 @@
                 <span class="tag">ASAN</span>
               </div>
               <p class="post-excerpt">
-                Crafted <code>.cab</code> file causes a circular singly-linked list in salvage mode when the second <code>cabd_read_files()</code> call fails without updating the file list pointer. ASAN-confirmed heap-use-after-free in <code>cabd_close()</code>. Fixed in commit <code>c8336f2</code>.
+                libmspack is the open-source library that reads Microsoft Cabinet (.cab) archives — the format used by Windows installers and update packages. When the parser encounters a corrupt archive and enters "salvage mode" (a recovery path for partial files), a crafted second cabinet header can leave a circular singly-linked list unresolved, causing the cleanup code to walk a freed pointer. ASAN-confirmed heap-use-after-free in <code>cabd_close()</code> on any crafted <code>.cab</code> that fails midway through the second <code>cabd_read_files()</code> call. Fixed in commit <code>c8336f2</code>.
               </p>
             </a>
 
@@ -462,7 +462,7 @@
                 <span class="tag">Core Dump</span>
               </div>
               <p class="post-excerpt">
-                Missing bounds check in <code>do_core_note()</code>'s FreeBSD <code>NT_PRPSINFO</code> path: process name read at <code>doff + argoff</code> without verifying the offset is within the buffer. Fixed in commit <code>6bb1b445</code> by Christos Zoulas.
+                The <code>file</code> command is installed on virtually every Unix system — it identifies what a file actually is by inspecting its contents, and its core library libmagic is embedded in countless editors, IDEs, and security tools. A missing bounds check in the ELF core dump parser (<code>NT_PRPSINFO</code> path for FreeBSD) lets a crafted core file cause <code>do_core_note()</code> to read a process name at an attacker-controlled offset past the buffer's end. Fixed in commit <code>6bb1b445</code> by Christos Zoulas.
               </p>
             </a>
 
@@ -481,7 +481,7 @@
                 <span class="tag">Proof of Concept</span>
               </div>
               <p class="post-excerpt">
-                Kernel driver that calls <code>win32kfull!GreProtectSpriteContent</code> directly to mark any window as excluded from screen capture — making it invisible to every user-mode recording API without touching <code>SetWindowDisplayAffinity</code>. Confirms that <code>WDA_EXCLUDEFROMCAPTURE</code> is enforced entirely inside the kernel, inside DWM's compositor path.
+                On Windows, the Desktop Window Manager (DWM) is the component that composites every window you see on screen. There is a public API to exclude a window from screen recording, but DWMShield goes deeper — it calls an undocumented kernel function (<code>win32kfull!GreProtectSpriteContent</code>) to mark any window as capture-excluded at the compositor level, making it completely invisible to every user-mode recording API without using the documented flag. The result confirms that <code>WDA_EXCLUDEFROMCAPTURE</code> enforcement lives entirely inside the kernel's compositor path, beyond the reach of user-space monitoring or anti-cheat tools.
               </p>
             </a>
 
@@ -500,7 +500,7 @@
                 <span class="tag">Anti-Debug</span>
               </div>
               <p class="post-excerpt">
-                Courier logistics app with four chained secrets: obfuscated dispatch code, JNI callback hiding the attestation, anti-debug bypass to unlock encrypted notes, and a local HMAC verifier for the final flag.
+                CTF Android challenges teach the same techniques used by malware analysts and app security testers. This one wraps a fake courier logistics app around four chained protections: an obfuscated dispatch code, a JNI native callback (native code bridge) hiding the attestation logic, an anti-debug trap locking away encrypted notes, and a local HMAC verifier for the final secret. Each layer must be broken in sequence using Frida (a dynamic code-injection tool) and static analysis in a disassembler.
               </p>
             </a>
 
@@ -518,7 +518,7 @@
                 <span class="tag">AES</span>
               </div>
               <p class="post-excerpt">
-                An Android APK shipping a <code>.ko</code> in <code>assets/</code>. Load the module manually, reverse the XOR token from <code>libnative.so</code>, and hit <code>ioctl(0x1337)</code> on <code>/dev/ctf</code> to get the flag back.
+                Android apps normally cannot access kernel-level features directly. This challenge ships a Linux kernel module hidden inside an APK's assets folder — when manually loaded, it exposes a device file that only responds to a specific secret token derived from the companion native library. Reverse the XOR token from <code>libnative.so</code>, load the <code>.ko</code> manually, and send <code>ioctl(0x1337)</code> on <code>/dev/ctf</code> to retrieve the flag.
               </p>
             </a>
 
@@ -537,7 +537,7 @@
                 <span class="tag">SHA256</span>
               </div>
               <p class="post-excerpt">
-                Linux malware forking into an anti-analysis tree, storing encrypted flag bytes in an anonymous <code>mmap</code> region. Combine PCAP, memory dump, and disk image to reconstruct the SHA256 key chain and decrypt.
+                Malware sometimes stores sensitive data in anonymous memory regions that vanish the moment the process ends — no file on disk, nothing obvious in a snapshot. This forensics challenge requires combining three separate artifacts (a network capture, a memory dump, and a disk image) to reconstruct how the malware distributed its payload across forked child processes hidden in an anonymous <code>mmap</code> region. Rebuild the SHA256 key chain from process relationships and decrypt the XChaCha20-Poly1305-encrypted payload.
               </p>
             </a>
 
@@ -556,7 +556,7 @@
                 <span class="tag">Android</span>
               </div>
               <p class="post-excerpt">
-                Flag hidden in an uncommitted WAL frame that normal SQLite won't show. Raw WAL parsing, native reverse engineering for the PBKDF2 pepper, then AES-GCM + MessagePack to pull it out.
+                SQLite is the most widely deployed database engine in the world — it runs inside every Android app, every browser, and most desktop software. To stay fast, SQLite writes changes to a separate "write-ahead log" (WAL) file before committing them to the main database; standard queries see only committed frames. This challenge hides the flag in an uncommitted WAL frame that SQLite's normal interface skips entirely. Parse the WAL file raw to reach the hidden frame, reverse the native library to extract the PBKDF2 pepper, then decrypt the AES-GCM blob and unpack the MessagePack payload.
               </p>
             </a>
 
@@ -575,7 +575,7 @@
                 <span class="tag">Secret Detection</span>
               </div>
               <p class="post-excerpt">
-                Three-layer scanner for leaked credentials in git commit history: regex catches known formats (AWS keys, GitHub PATs, database connection strings, private keys), Shannon entropy scores each match, and an LLM verifies with full commit context — commit message, file path, surrounding diff lines — to filter out test data and placeholders.
+                Developers occasionally commit API keys, passwords, or private certificates into a repository by mistake — and those secrets remain in the history even after the file is deleted or the key is rotated. This open-source tool scans the full commit history in three passes to find them with low false-positive rates: a regex stage that catches known credential formats (AWS keys, GitHub PATs, database URLs, private keys), a Shannon entropy filter that scores randomness, and a final LLM pass that reads the full commit context — message, file path, surrounding diff — to discard test data and placeholders before reporting real secrets.
               </p>
             </a>
 
@@ -594,7 +594,7 @@
                 <span class="tag">xdelta</span>
               </div>
               <p class="post-excerpt">
-                xdelta-patched Angry Birds APK with a hidden score-submission server. Decompile with JADX, find the hardcoded HMAC-SHA256 secret in <code>GoogleConnectService</code>, forge a 10<sup>9</sup> score, and get the flag.
+                Game servers that trust client-reported scores are vulnerable: if you can reverse the signing mechanism, you can submit any score you want. This CTF challenge patches a real Angry Birds APK with xdelta, adds a hidden score-submission endpoint, and buries the signing key inside the source. Decompile with JADX, find the hardcoded HMAC-SHA256 secret in <code>GoogleConnectService</code>, forge a 10<sup>9</sup> score, and collect the flag from the server.
               </p>
             </a>
 
@@ -613,7 +613,7 @@
                 <span class="tag">Tooling</span>
               </div>
               <p class="post-excerpt">
-                Post-processor for Ghidra, IDA, and Binary Ninja C dumps that splits the output by function and pipes each one through <code>llm4decompile-22b-v2</code> — a model trained specifically on decompiler output rather than general source code — then deduplicates prototype declarations and normalizes whitespace.
+                Decompilers (Ghidra, IDA, Binary Ninja) convert compiled machine code back into C-like source — but the output is full of generated variable names, duplicate prototype declarations, and inconsistent formatting that slow down analysis. This tool post-processes those C dumps automatically: it splits the output by function, pipes each one through <code>llm4decompile-22b-v2</code> (a model trained specifically on decompiler output rather than general source code), then deduplicates declarations and normalizes whitespace to produce clean, readable pseudo-C ready for further analysis.
               </p>
             </a>
 
@@ -630,8 +630,7 @@
                 <span class="tag">Mobile</span>
               </div>
               <p class="post-excerpt">
-                Unity IL2CPP APK, <code>libil2cpp.so</code> + <code>global-metadata.dat</code>,
-                Il2CppDumper, then AES-CBC decrypt in Python to recover the flag.
+                Unity games use IL2CPP to compile their C# logic to native machine code, which is significantly harder to reverse than reading .NET bytecode. This HackTheBox challenge provides a Unity APK where the flag is encrypted inside the native library. Run Il2CppDumper against <code>libil2cpp.so</code> and <code>global-metadata.dat</code> to reconstruct the type metadata, locate the decryption routine, extract the AES-CBC key and IV, and decrypt in Python to recover the flag.
               </p>
             </a>
 
