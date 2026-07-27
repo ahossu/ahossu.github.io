@@ -164,6 +164,14 @@
             <span class="tag">Staging Driver</span>
             <span class="tag">WiFi</span>
             <span class="tag">Heap Overflow</span>
+            <span class="tag">CVE-2026-64440</span>
+            <span class="tag">CVE-2026-64441</span>
+            <span class="tag">CVE-2026-64442</span>
+            <span class="tag">CVE-2026-64443</span>
+            <span class="tag">CVE-2026-64444</span>
+            <span class="tag">CVE-2026-64445</span>
+            <span class="tag">CVE-2026-64446</span>
+            <span class="tag">CVE-2026-64536</span>
           </div>
         </header>
 
@@ -369,19 +377,19 @@ memcpy(pmlmeinfo->chg_txt, p + 2, len);  /* len = raw IE length byte, 0-255 */</
             <li><code>core/rtw_ieee80211.c</code> — <code>rtw_get_wps_attr()</code>: entry length guard, inner-loop 4-byte remaining check</li>
             <li><code>os_dep/ioctl_cfg80211.c</code> — <code>rtw_cfg80211_set_wpa_ie()</code>: WPA/WPA2 IE size check</li>
           </ul>
-          <p>Upstream commits (staging-linus, 2026-07-07):</p>
+          <p>Upstream commits (staging-linus, 2026-07-07) and assigned CVEs:</p>
           <ul>
-            <li><code>ed51de4a86e1</code> — <code>update_beacon_info()</code> IE loop</li>
-            <li><code>ef61d628dfad</code> — <code>issue_assocreq()</code> / <code>join_cmd_hdl()</code> IE loops</li>
-            <li><code>5a752a616e75</code> — <code>rtw_cfg80211_set_wpa_ie()</code> heap overflow</li>
-            <li><code>f8001e1a516b</code> — <code>HT_caps_handler()</code> OOB write</li>
-            <li><code>f9654207e922</code> — <code>OnAssocRsp()</code> IE loop</li>
-            <li><code>a1fc19d61f66</code> — <code>OnAuth()</code> WEP length underflow</li>
-            <li><code>3bf39f711ff2</code> — <code>is_ap_in_tkip()</code> IE loop</li>
-            <li><code>1463ca3ec660</code> — <code>rtw_get_sec_ie()</code>, <code>rtw_get_wapi_ie()</code>, <code>rtw_get_wps_attr()</code></li>
+            <li><code>f8001e1a516b</code> — <code>HT_caps_handler()</code> OOB write — <strong>CVE-2026-64440</strong></li>
+            <li><code>1463ca3ec660</code> — <code>rtw_get_sec_ie()</code>, <code>rtw_get_wapi_ie()</code>, <code>rtw_get_wps_attr()</code> — <strong>CVE-2026-64441</strong></li>
+            <li><code>ef61d628dfad</code> — <code>issue_assocreq()</code> / <code>join_cmd_hdl()</code> IE loops — <strong>CVE-2026-64442</strong></li>
+            <li><code>ed51de4a86e1</code> — <code>update_beacon_info()</code> IE loop — <strong>CVE-2026-64443</strong></li>
+            <li><code>f9654207e922</code> — <code>OnAssocRsp()</code> IE loop — <strong>CVE-2026-64444</strong></li>
+            <li><code>a1fc19d61f66</code> — <code>OnAuth()</code> WEP length underflow — <strong>CVE-2026-64445</strong></li>
+            <li><code>5a752a616e75</code> — <code>rtw_cfg80211_set_wpa_ie()</code> heap overflow — <strong>CVE-2026-64446</strong></li>
+            <li><code>3bf39f711ff2</code> — <code>is_ap_in_tkip()</code> IE loop — <strong>CVE-2026-64536</strong></li>
           </ul>
           <div class="note">
-            All of these bugs have been in the driver since the initial staging commit in 2017. Fixes for the full series landed in mainline (staging-linus) on 2026-07-07 and were backported to the 7.1, 6.18, 6.12, 6.6, 6.1, and 5.15 stable trees; three of the eight patches also backported cleanly to 5.10. Released in 7.1.4, 6.18.39, and 6.12.96 (all 2026-07-18). Devices running kernels outside those trees that have not applied the patches manually remain exposed.
+            All of these bugs have been in the driver since the initial staging commit in 2017. Fixes for the full series landed in mainline (staging-linus) on 2026-07-07. Stable releases: 7.1.4, 6.18.39, 6.12.96 (2026-07-18) and 6.6.145, 6.1.178, 5.15.212 (2026-07-24); three of the eight patches also reached 5.10.261 (2026-07-24). Eight CVEs assigned by the kernel security team: CVE-2026-64440, CVE-2026-64441, CVE-2026-64442, CVE-2026-64443, CVE-2026-64444, CVE-2026-64445, CVE-2026-64446, CVE-2026-64536.
           </div>
         </section>
       </article>
