@@ -172,11 +172,28 @@
         <nav class="post-toc">
           <p class="post-toc-title">On this page</p>
           <ul>
+            <li><a href="#overview">Overview</a></li>
             <li><a href="#stage1">Stage 1 — persistence vector + C2 domain (FLAG 1)</a></li>
             <li><a href="#stage2">Stage 2 — PAM backdoor RE + master password (FLAG 2)</a></li>
             <li><a href="#stage3">Stage 3 — DNS PCAP decode + stolen credentials (FLAG 3)</a></li>
           </ul>
         </nav>
+
+        <section id="overview">
+          <h2>Overview</h2>
+          <p>WraithStep was a forensic challenge I authored for ROCSC (Romanian Open Cybersecurity Competition) Finals 2026 — the national final round of Romania's primary student cybersecurity competition. The scenario: a Linux production server was compromised, the ops team captured a disk and memory snapshot before taking it offline, and contestants receive the resulting archive with three flags to extract.</p>
+          <p>The archive is a partial filesystem dump from the infected host containing the following artifacts:</p>
+          <ul>
+            <li><code>proc_snapshot/</code> — a subset of <code>/proc/</code> captured at triage time: three PID directories for PID 512 (<code>systemd-udevd</code>), PID 1247 (the suspicious process), and PID 8834 (an sshd worker for an active devops session)</li>
+            <li><code>etc/udev/rules.d/99-apm-events.rules</code> — the udev rules directory with two standard Ubuntu entries and one that doesn't ship in any Ubuntu package</li>
+            <li><code>lib/udev/apm-events-d</code> — a stripped x86-64 ELF registered by the anomalous udev rule as the event handler; this is the dropper</li>
+            <li><code>lib/security/pam_pkcs11.so</code> — a PAM authentication module whose MD5 hash doesn't match the record in the dpkg database</li>
+            <li><code>var/lib/dpkg/info/libpam-pkcs11.md5sums</code> — the authentic package manifest for comparison</li>
+            <li><code>var/log/auth.log</code> and <code>syslog</code> — system logs covering the intrusion window</li>
+            <li><code>pcaps/dns_exfil.pcap</code> — a packet capture showing unusual outbound DNS traffic from the host</li>
+          </ul>
+          <p>The three stages build directly on each other. Stage 1 uses the proc snapshot and the dropper binary to identify the persistence mechanism and the C2 domain. Stage 2 reverses the replaced PAM module to recover the master password the attacker left for silent SSH access. Stage 3 decodes the DNS exfiltration PCAP using what Stage 2 reveals about the RC4 stream cipher the attacker reused in both binaries. Each flag is a SHA-256 hash of the recovered secret, formatted as <code>CTF{hex}</code>.</p>
+        </section>
 
         <section id="stage1">
           <h2>Stage 1 — persistence vector + C2 domain (FLAG 1)</h2>
