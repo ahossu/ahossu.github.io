@@ -171,14 +171,22 @@
         <nav class="post-toc">
           <p class="post-toc-title">On this page</p>
           <ul>
-            <li><a href="#smooth">1. SmoothParser — tautological guard, OOB iterator dereference</a></li>
-            <li><a href="#id3">2. ID3v2.3 — uint32_t overflow → infinite loop</a></li>
-            <li><a href="#amt">3. AMT IPv6 — uint16_t underflow → heap OOB</a></li>
+            <li><a href="#context">1. Context</a></li>
+            <li><a href="#smooth">2. SmoothParser — tautological guard, OOB iterator dereference</a></li>
+            <li><a href="#id3">3. ID3v2.3 — uint32_t overflow → infinite loop</a></li>
+            <li><a href="#amt">4. AMT IPv6 — uint16_t underflow → heap OOB</a></li>
           </ul>
         </nav>
 
+        <section id="context">
+          <h2>1. Context</h2>
+          <p>VLC is the most widely used open-source media player in the world — hundreds of millions of installations, capable of playing virtually every audio and video format, reading from files, network streams, DVDs, and Blu-rays. Most of that breadth comes from its parser ecosystem: dozens of demuxers and access modules, each implementing a different format or protocol, each parsing attacker-controlled byte streams. That makes it a genuinely interesting target for vulnerability research.</p>
+          <p>I audited VLC 4.0-dev (the active development branch) over a period of a few days, focused on the demux and access modules — specifically the code paths that parse container formats, metadata tags, and network tunnel protocols. The approach was pure static analysis: no fuzzing, no instrumentation, just reading the code and following the data. The goal was to find logical errors in bounds checking and arithmetic — the class of bugs that tends to hide in format-specific parsing code that doesn't get the same scrutiny as more central infrastructure.</p>
+          <p>Three bugs turned up across three different areas. The first is a logic error in the Smooth Streaming manifest parser — a tautological guard that makes an end-of-iterator check meaningless. The second is an integer overflow in the ID3v2.3 tag parser that causes an infinite loop. The third is an integer underflow in the AMT (Automatic Multicast Tunneling) IPv6 handler that moves a buffer pointer roughly 64 KB before its allocation. None of them require any interaction beyond opening the crafted media source.</p>
+        </section>
+
         <section id="smooth">
-          <h2>1. SmoothParser — tautological guard, OOB iterator dereference</h2>
+          <h2>2. SmoothParser — tautological guard, OOB iterator dereference</h2>
           <p>The Smooth Streaming parser in <code>modules/demux/smooth/playlist/SmoothParser.cpp</code> builds a segment timeline from <code>&lt;c&gt;</code> (chunk) elements inside a <code>&lt;StreamIndex&gt;</code>. When a chunk element doesn't have a <code>d</code> (duration) attribute, the parser tries to compute the duration from the difference between the current and next chunk's <code>t</code> (timestamp) attributes. The logic that is supposed to check "is there a next element" is wrong:</p>
           <pre><code>for(it = chunks.begin(); it != chunks.end(); ++it)
 {
@@ -210,7 +218,7 @@
         </section>
 
         <section id="id3">
-          <h2>2. ID3v2.3 — uint32_t overflow → infinite loop</h2>
+          <h2>3. ID3v2.3 — uint32_t overflow → infinite loop</h2>
           <p>The ID3v2.3 frame parser in <code>modules/meta_engine/ID3Tag.h</code> reads each frame's size field and adds 10 to account for the frame header. The result is stored in a <code>uint32_t</code>:</p>
           <pre><code>while( i_ID3size > 10 )
 {
@@ -236,7 +244,7 @@ uint32_t i_framesize = i_rawsize + 10;</code></pre>
         </section>
 
         <section id="amt">
-          <h2>3. AMT IPv6 — uint16_t underflow → heap OOB</h2>
+          <h2>4. AMT IPv6 — uint16_t underflow → heap OOB</h2>
           <p>The AMT (Automatic Multicast Tunneling) access module in <code>modules/access/amt.c</code> receives packets from an AMT relay over UDP. For fragmented IPv6 packets, it subtracts 8 from <code>payload_len</code> to account for the IPv6 Fragment Extension Header. Both <code>payload_len</code> and the subtraction result are <code>uint16_t</code>. If <code>payload_len</code> is less than 8, the subtraction underflows:</p>
           <pre><code>/* payload_len read directly from attacker-controlled IPv6 header */
 payload_len = pkt->p_buffer[AMT_HDR_LEN + 4] << 8;

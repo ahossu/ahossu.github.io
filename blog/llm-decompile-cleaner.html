@@ -176,6 +176,7 @@
             <li><a href="#problem">1. The problem with decompiler output</a></li>
             <li><a href="#model">2. Why llm4decompile-22b-v2</a></li>
             <li><a href="#pipeline">3. How it works</a></li>
+            <li><a href="#example">4. Before / after example</a></li>
           </ul>
         </nav>
 
@@ -209,6 +210,37 @@ python llm4decompile_clean.py -i raw_funcs.c -o clean_funcs.c --keep-intermediat
           <div class="note">
             Works with any tool that can write its C pseudocode to a file: IDA, Ghidra, Binary Ninja, radare2, Snowman. The only thing the script needs is the comment marker that separates individual function blocks.
           </div>
+          <h3 id="example">Before / after example</h3>
+          <p>Raw Ghidra output for a credential-checking function:</p>
+          <pre><code>/* ---- Function: FUN_00401234 ---- */
+
+undefined8 FUN_00401234(long param_1,undefined8 param_2)
+{
+  int iVar1;
+  int local_8;
+
+  local_8 = 0;
+  while (local_8 &lt; 0x10) {
+    iVar1 = *(int *)(param_1 + (long)local_8 * 4);
+    if (iVar1 != *(int *)(param_2 + (long)local_8 * 4)) {
+      return 0;
+    }
+    local_8 = local_8 + 1;
+  }
+  return 1;
+}</code></pre>
+          <p>After the LLM pass:</p>
+          <pre><code>/* ---- Function: compare_credential_arrays ---- */
+
+bool compare_credential_arrays(int *stored_creds, int *input_creds)
+{
+    for (int i = 0; i &lt; 16; i++) {
+        if (stored_creds[i] != input_creds[i])
+            return false;
+    }
+    return true;
+}</code></pre>
+          <p>The model renamed <code>FUN_00401234</code> to something descriptive based on what the function actually does, inferred the array semantics from the pointer arithmetic, replaced the <code>local_8</code> counter with <code>i</code>, and converted the implicit boolean returns from <code>undefined8</code> to <code>bool</code>. The types and variable names are still conservative — the model didn't guess at types it couldn't verify — but the result is immediately readable without further work.</p>
         </section>
       </article>
 

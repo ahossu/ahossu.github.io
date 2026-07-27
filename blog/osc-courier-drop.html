@@ -171,6 +171,7 @@
         <nav class="post-toc">
           <p class="post-toc-title">On this page</p>
           <ul>
+            <li><a href="#overview">Overview</a></li>
             <li><a href="#stage1">Stage 1 — dispatch code → session token (FLAG 1)</a></li>
             <li><a href="#stage2">Stage 2 — native attestation via JNI callback (FLAG 2)</a></li>
             <li><a href="#stage3">Stage 3 — anti-debug bypass + encrypted locker (FLAG 3)</a></li>
@@ -178,6 +179,13 @@
             <li><a href="#solve">Stage 4 solve script</a></li>
           </ul>
         </nav>
+
+        <section id="overview">
+          <h2>Overview</h2>
+          <p>CourierDrop is a realistic Android courier logistics app presented as a challenge at OSC Regional 2026 — a Romanian competitive security event. The app looks like a functional delivery tracking tool with driver login, stop management, and parcel scanning — but the actual goal is to extract four sequential flags hidden behind progressively harder layers, each derived from the one before it. Skipping a stage is not possible: every key is computed from the previous flag, so the chain must be walked in order.</p>
+          <p>The challenge combines techniques found in real commercial Android apps: an obfuscated dispatch code that is directly reversible through JADX, a native library that communicates back to Java through a JNI callback rather than a return value, anti-debug guards that detect Frida by scanning <code>/proc/self/maps</code>, and a local HTTP verifier running inside the emulator that requires a correctly signed HMAC proof before it returns the final flag.</p>
+          <p>The full solve path: reverse the dispatch code with JADX → capture the native attestation with a Frida hook on the Java callback → bypass the Frida detection guard → construct a valid HMAC proof and POST it to the local verifier with Python. Running all Frida scripts in the same session is essential: Stage 3 reads the attestation from in-memory state populated during Stage 2, so a fresh Frida session breaks it silently.</p>
+        </section>
 
         <section id="stage1">
           <h2>Stage 1 — dispatch code → session token (FLAG 1)</h2>

