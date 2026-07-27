@@ -259,10 +259,11 @@
                 <span class="tag">Heap OOB Write</span>
                 <span class="tag">ONNX Runtime</span>
                 <span class="tag">Whisper</span>
+                <span class="tag">Windows</span>
                 <span class="tag">ASAN</span>
               </div>
               <p class="post-excerpt">
-                Heap out-of-bounds write in <code>LogMel::Compute()</code> inside <code>microsoft/onnxruntime-extensions</code>. The copy loop at <code>speech_features.hpp:273–279</code> copies <code>mag_time</code> floats per row into a buffer allocated for <code>expected_time</code>. Audio longer than the model's chunk size causes <code>mag_time &gt; expected_time</code>, writing 32KB per second of excess audio past each row's slot. Reachable in any deployment with <code>AudioDecoder.max_samples = 0</code> or a mismatched <code>chunk_size</code>. Reported to MSRC (case 115486); fix landed in main on 2026-07-01 (commit 8e7b615).
+                <code>microsoft/onnxruntime-extensions</code> is the library that handles audio pre-processing in speech-to-text applications — anything built on Whisper or Azure AI Speech goes through it. When it converts a recording into the format neural networks understand (mel-spectrogram), a missing length check causes the code to write past the end of a heap allocation: the buffer is sized for <code>expected_time</code> frames but the loop runs for <code>mag_time</code> frames, overwriting 32 KB of heap per second of audio beyond the expected chunk. Any application processing untrusted audio with <code>AudioDecoder.max_samples = 0</code> or a mismatched <code>chunk_size</code> is affected. Reported to MSRC (case 115486); fix in commit 8e7b615 (2026-07-01).
               </p>
             </a>
 
