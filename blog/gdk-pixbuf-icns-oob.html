@@ -4,9 +4,9 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-    <title>gdk-pixbuf ICNS: Heap OOB Read in uncompress()</title>
-    <meta name="description" content="Heap out-of-bounds read in the ICNS image loader in gdk-pixbuf. uncompress() in io-icns.c takes a source pointer and a pixel count but no source length, and reads from the compressed stream until size×size pixels have been decoded — regardless of how many bytes are actually in the icon block. load_icon() computes the valid source length from the block header but never passes it to the decompressor. A crafted .icns file with a zero-byte payload triggers an unbounded read into adjacent heap memory, reachable from any GTK application that opens an image file.">
-    <meta property="og:title" content="gdk-pixbuf ICNS: Heap OOB Read in uncompress()" />
+    <title>gdk-pixbuf ICNS: Heap OOB Read in uncompress() (CVE-2026-18090)</title>
+    <meta name="description" content="CVE-2026-18090. Heap out-of-bounds read in the ICNS image loader in gdk-pixbuf. uncompress() in io-icns.c takes a source pointer and a pixel count but no source length, and reads from the compressed stream until size×size pixels have been decoded — regardless of how many bytes are actually in the icon block. load_icon() computes the valid source length from the block header but never passes it to the decompressor. A crafted .icns file with a zero-byte payload triggers an unbounded read into adjacent heap memory, reachable from any GTK application that opens an image file.">
+    <meta property="og:title" content="gdk-pixbuf ICNS: Heap OOB Read in uncompress() (CVE-2026-18090)" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
     <meta name="twitter:card" content="summary" />
@@ -150,7 +150,7 @@
         <p class="back-link">← <a href="/blog/">Back to blog</a></p>
 
         <header class="post-header">
-          <h1>gdk-pixbuf ICNS: Heap OOB Read in <code>uncompress()</code></h1>
+          <h1>gdk-pixbuf ICNS: Heap OOB Read in <code>uncompress()</code> (CVE-2026-18090)</h1>
           <p class="post-subtitle">
             The ICNS loader in <code>gdk-pixbuf/io-icns.c</code> decompresses RLE icon data without knowing how many source bytes are available. <code>uncompress()</code> takes a pixel count and a source pointer but no source length, and reads from the compressed stream until <code>size×size</code> pixels have been decoded — regardless of the actual block boundary. <code>load_icon()</code> computes the valid payload length from the block header but never forwards it to the decompressor. A crafted <code>.icns</code> file with a zero-byte icon payload triggers an unbounded read into adjacent heap memory. All four legacy RLE icon sizes are affected. Reachable from any GTK application that opens an image file — Nautilus, Eye of GNOME, or anything backed by <code>gdk-pixbuf</code>.
           </p>
@@ -166,6 +166,7 @@
             <span class="tag">ICNS</span>
             <span class="tag">GTK</span>
             <span class="tag">ASAN</span>
+            <span class="tag">CVE-2026-18090</span>
           </div>
         </header>
 
@@ -551,14 +552,14 @@ READ of size 1 at 0x7b96e41e0012 thread T0
         }
     }</code></pre>
           <div class="note">
-            As of 2026-07-24, neither fix has been applied. <code>io-icns.c</code> in the <code>master</code> branch of <a href="https://gitlab.gnome.org/GNOME/gdk-pixbuf">GNOME/gdk-pixbuf</a> is unchanged from the vulnerable version. The 2.44.7 release (2026-06-27) does not contain a fix. GitLab issue <a href="https://gitlab.gnome.org/GNOME/gdk-pixbuf/-/issues/308">#308</a> is open.
+            As of publication, neither fix has been applied. <code>io-icns.c</code> in the <code>master</code> branch of <a href="https://gitlab.gnome.org/GNOME/gdk-pixbuf">GNOME/gdk-pixbuf</a> is unchanged from the vulnerable version. The 2.44.7 release (2026-06-27) does not contain a fix. CVE-2026-18090 was assigned on 2026-08-03. GitLab issue <a href="https://gitlab.gnome.org/GNOME/gdk-pixbuf/-/issues/308">#308</a> is open.
           </div>
         </section>
 
         <section id="disclosure">
           <h2>10. Disclosure</h2>
           <p>Reported to the GNOME Security team at <code>security@gnome.org</code> on 2026-04-22, with a full bug description, ASAN confirmation, Python reproducer for all four icon sizes, and a proposed fix. Andrea Veri redirected the report to <code>security.gnome.org</code> (ticket #267). Michael Catanzaro acknowledged the report and moved it to the gdk-pixbuf issue tracker. The issue is tracked at <a href="https://gitlab.gnome.org/GNOME/gdk-pixbuf/-/issues/308">gitlab.gnome.org/GNOME/gdk-pixbuf/-/issues/308</a>.</p>
-          <p>The 90-day coordinated disclosure window elapsed on 2026-07-22 without a fix. gdk-pixbuf 2.44.7, released 2026-06-27, does not contain a fix. <code>io-icns.c</code> is unchanged in the <code>master</code> branch as of publication.</p>
+          <p>The 90-day coordinated disclosure window elapsed on 2026-07-22 without a fix. Michael Catanzaro unset confidentiality on 2026-07-24 and requested a CVE at that point. gdk-pixbuf 2.44.7, released 2026-06-27, does not contain a fix. <code>io-icns.c</code> is unchanged in the <code>master</code> branch as of publication. CVE-2026-18090 was assigned on 2026-08-03.</p>
           <p>Other recent kernel and library work: a heap buffer overflow series in the rtl8723bs staging WiFi driver (<a href="rtl8723bs-wifi-overflow">separate post</a>), a heap OOB write in the iSCSI target CHAP authentication code (<a href="iscsi-chap-base64-overflow">separate post</a>), an OOB array access in <code>ieee80211_ml_epcs()</code> in the mac80211 WiFi stack (<a href="mac80211-epcs-oob">separate post</a>), and a heap OOB write in <code>LogMel::Compute()</code> inside <code>microsoft/onnxruntime-extensions</code> (<a href="onnxruntime-logmel-oob">separate post</a>).</p>
         </section>
 

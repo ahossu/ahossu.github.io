@@ -191,7 +191,7 @@
           <div class="posts-list">
 
             <a class="post-card" href="gdk-pixbuf-icns-oob">
-              <h2 class="post-title">gdk-pixbuf ICNS: Heap OOB Read in <code>uncompress()</code></h2>
+              <h2 class="post-title">gdk-pixbuf ICNS: Heap OOB Read in <code>uncompress()</code> (CVE-2026-18090)</h2>
               <p class="post-meta">
                 <span>Vulnerability Research • Image Parsing</span>
                 <span>gdk-pixbuf</span>
@@ -203,9 +203,10 @@
                 <span class="tag">gdk-pixbuf</span>
                 <span class="tag">GTK</span>
                 <span class="tag">ASAN</span>
+                <span class="tag">CVE-2026-18090</span>
               </div>
               <p class="post-excerpt">
-                gdk-pixbuf is the image-loading library used by GTK — the toolkit behind GNOME, gedit, and most Linux desktop applications. It parses Apple icon (.icns) files, and a crafted icon can make it read past the end of a heap buffer, potentially crashing the application or leaking adjacent memory just by opening a rogue file. <code>uncompress()</code> takes a pixel count and a source pointer but no source length, reading compressed pixel data until <code>size×size</code> pixels are decoded regardless of how many bytes the block actually contains. <code>load_icon()</code> computes the valid payload length from the block header but never forwards it to the decompressor. All four legacy RLE icon sizes (16×16 through 128×128) are affected, reachable from any GTK application that opens a file dialog. Unfixed as of 2026-07-24; 90-day disclosure window elapsed.
+                gdk-pixbuf is the image-loading library used by GTK — the toolkit behind GNOME, gedit, and most Linux desktop applications. It parses Apple icon (.icns) files, and a crafted icon can make it read past the end of a heap buffer, potentially crashing the application or leaking adjacent memory just by opening a rogue file. <code>uncompress()</code> takes a pixel count and a source pointer but no source length, reading compressed pixel data until <code>size×size</code> pixels are decoded regardless of how many bytes the block actually contains. <code>load_icon()</code> computes the valid payload length from the block header but never forwards it to the decompressor. All four legacy RLE icon sizes (16×16 through 128×128) are affected, reachable from any GTK application that opens a file dialog. CVE-2026-18090 assigned 2026-08-03; unfixed as of publication.
               </p>
             </a>
 
