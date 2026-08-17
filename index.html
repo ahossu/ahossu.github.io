@@ -48,7 +48,7 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 3rem;
+        margin-bottom: 2rem;
       }
       .site-title {
         font-weight: 700;
@@ -99,21 +99,25 @@
         margin-top: 2rem;
       }
       .about h2 {
+        margin-top: 0;
         font-weight: 500;
         margin-bottom: 1rem;
       }
       .about p { margin-bottom: 1rem; }
 
-      .social {
-        margin-top: 2rem;
-      }
-      .social ul {
-        list-style: none;
-        padding: 0;
-        margin: 0;
+      .header-social {
         display: flex;
-        gap: 1rem;
-        flex-wrap: wrap;
+        gap: 1.25rem;
+        align-items: center;
+      }
+      .header-social a {
+        color: var(--accent);
+        font-size: 0.9rem;
+      }
+
+      @media (max-width: 480px) {
+        .header-social { gap: 0.6rem; }
+        .header-social a { font-size: 0.75rem; }
       }
 
       .site-footer {
@@ -133,6 +137,12 @@
 
       <header class="site-header">
         <span class="site-title">Home</span>
+        <nav class="header-social">
+          <a href="https://github.com/ahossu/">GitHub</a>
+          <a href="https://discord.com/users/691188707084206102">Discord</a>
+          <a href="https://www.linkedin.com/in/alexandru-hossu/">LinkedIn</a>
+          <a href="https://x.com/alex_hossu">X</a>
+        </nav>
         <img src="avatar.jpg" alt="Alexandru Hossu" class="site-logo">
       </header>
 
@@ -156,14 +166,6 @@
           <p>When I'm off-keyboard, you'll find me travelling, shooting photos, hiking, skiing, biking, swimming, or spending time with my friends.</p>
         </section>
 
-        <nav class="social">
-          <ul>
-            <li><a href="https://github.com/ahossu/">GitHub</a></li>
-            <li><a href="https://discord.com/users/691188707084206102">Discord</a></li>
-            <li><a href="https://www.linkedin.com/in/alexandru-hossu/">LinkedIn</a></li>
-            <li><a href="https://x.com/alex_hossu">X</a></li>
-          </ul>
-        </nav>
       </main>
 
       <footer class="site-footer">
