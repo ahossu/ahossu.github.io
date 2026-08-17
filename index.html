@@ -4,16 +4,16 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-    <title>Home</title>
-    <meta name="description" content="Alexandru Hossu — cybersecurity student & AI enthusiast">
-    <meta property="og:title" content="Home" />
+    <title>Alexandru Hossu</title>
+    <meta name="description" content="Alexandru Hossu — security researcher, Linux kernel contributor, and 2nd-year CS student at TU Delft.">
+    <meta property="og:title" content="Alexandru Hossu" />
+    <meta property="og:description" content="Alexandru Hossu — security researcher, Linux kernel contributor, and 2nd-year CS student at TU Delft." />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary" />
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 
     <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
-
     <link rel="icon" type="image/jpeg" href="avatar.jpg">
 
     <style>
@@ -73,108 +73,97 @@
         font-size: 1rem;
       }
 
-      section + section { margin-top: 2rem; }
-      .aliases {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        display: grid;
-        grid-template-columns: max-content max-content;
-        column-gap: 2.75rem;
-        row-gap: 0;
+      .nav-buttons {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-top: 2rem;
       }
-      .about h2,
-      .links h3 {
+      .btn {
+        display: inline-block;
+        padding: 0.55rem 1.4rem;
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        border-radius: 4px;
+        font-size: 0.95rem;
+        font-weight: 500;
+        transition: background 0.15s, color 0.15s;
+      }
+      .btn:hover {
+        background: var(--accent);
+        color: var(--bg);
+        text-decoration: none;
+      }
+
+      .about {
+        margin-top: 2rem;
+      }
+      .about h2 {
         font-weight: 500;
         margin-bottom: 1rem;
       }
       .about p { margin-bottom: 1rem; }
 
-      .links ul {
+      .social {
+        margin-top: 2rem;
+      }
+      .social ul {
         list-style: none;
         padding: 0;
+        margin: 0;
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
       }
-      .links li { margin-bottom: 0.5rem; }
 
       .site-footer {
         border-top: 1px solid var(--border);
         margin-top: 3rem;
         padding-top: 1rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
       }
       .site-footer p {
         margin: 0;
         font-size: 0.9rem;
         opacity: 0.6;
       }
-      .social a {
-        margin-left: 1rem;
-        font-size: 1.4rem;
-        color: var(--fg);
-        opacity: 0.8;
-      }
-      .social a:hover { opacity: 1; }
     </style>
   </head>
   <body>
     <div class="wrapper">
 
       <header class="site-header">
-        <a href="/" class="site-title">Home</a>
-        <img src="avatar.jpg" alt="Logo" class="site-logo">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="avatar.jpg" alt="Alexandru Hossu" class="site-logo">
       </header>
 
       <main>
         <section class="hero">
           <h1>Alexandru Hossu</h1>
           <p class="subtitle">19-year-old • 2nd-year @ TU Delft (NL) • grad @ Tudor Vianu National HS of CS (Bucharest)</p>
-          <br>
-          <p class="subtitle">On different platforms, I’m known as:</p>
-          <ul class="aliases">
-            <li class="subtitle">Alex_Hossu</li>
-            <li class="subtitle">alex_hossu</li>
-            <li class="subtitle">ahossu</li>
-            <li class="subtitle">.alex</li>
-            <li class="subtitle">AlexHossu</li>
-            <li class="subtitle">GigelCuParPeEl</li>
-            <li class="subtitle">Gh05tPhX</li>
-            <li class="subtitle">rootyb0oty</li>
-          </ul>
         </section>
+
+        <nav class="nav-buttons">
+          <a href="blog/" class="btn">Research</a>
+          <a href="achievements" class="btn">Achievements</a>
+        </nav>
 
         <section class="about">
           <h2>About Me</h2>
-          <p>I’m passionate about cybersecurity. My focus is on reverse engineering, offensive security, hardware hacking, steganography and forensics. I spend most of my time self-studying and trying to continuously improve, and I’m especially drawn to the offensive side, actively reading and experimenting with evasion techniques. Finding and reporting vulnerabilities in real software is something I do for the fun of it.</p>
-          <p>I’m a Linux kernel contributor with several CVEs in mainline. I’ve found and reported vulnerabilities in open-source projects (VLC, libmspack, file(1), onnxruntime-extensions, gdk-pixbuf), NASA flight software and the Android platform. I did malware analysis research at the TU Delft Cyber Security Research Group, which led to a publication at ACM IMC 2026: "Investigating Next.js React2Shell Exploitation".</p>
-          <p>On the CTF side, I founded the vianu_hack CTF team, which peaked #2 nationally on CTFtime, and currently compete with both it and TU Delft’s CTF team. I’ve authored challenges for national and international competitions, and mentored at Unbreakable Romania, running workshops on reverse engineering Android and iOS applications.</p>
-          <p>I’m also deeply into AI, especially Image Recognition & Natural Language Processing, and I love solving algorithmic and logical problems. I attended Jane Street FTTP (Software Engineering Track) in London, a notoriously selective program for first-year students in software engineering and quantitative finance. Back in high school, I founded both the cybersecurity and AI clubs at Tudor Vianu National High School of Computer Science in Bucharest.</p>
-          <p>When I’m off-keyboard, you’ll find me travelling, shooting photos, hiking, skiing, biking, swimming, or spending time with my friends.</p>
-        </section>
-        
-        <section class="links">
-          <h3>Explore</h3>
-          <ul>
-            <li><a href="achievements">Check Out My Achievements</a></li> 
-          </ul>
-          <ul>
-            <li><a href="gallery">Check Out My Photo Gallery</a></li>
-          </ul>
-          <ul>
-            <li><a href="blog/">Check Out My Blog</a></li>
-          </ul>
+          <p>I'm passionate about cybersecurity. My focus is on reverse engineering, offensive security, hardware hacking, steganography, and forensics. I spend most of my time self-studying and trying to improve continuously, and I'm especially drawn to the offensive side, actively reading and experimenting with evasion techniques. I find and report vulnerabilities in real software for the fun of it.</p>
+          <p>I'm a Linux kernel contributor with several CVEs in mainline. I've found and reported vulnerabilities in open-source projects (VLC, libmspack, file(1), onnxruntime-extensions, gdk-pixbuf). I did malware analysis research at the TU Delft Cyber Security Research Group, which led to a publication at ACM IMC 2026: "Investigating Next.js React2Shell Exploitation."</p>
+          <p>On the CTF side, I founded the vianu_hack CTF team (peaked at #2 nationally on CTFtime) and currently compete as part of both it and TU Delft's CTF team. I've authored challenges for national and international competitions, and mentored at Unbreakable Romania, running workshops on reverse engineering Android and iOS applications.</p>
+          <p>I'm also deeply into AI, especially Image Recognition &amp; Natural Language Processing, and I love solving algorithmic and logical problems. I attended Jane Street FTTP (Software Engineering Track) in London, a notoriously selective program for first-year students in software engineering and quantitative finance. Back in high school, I founded both the cybersecurity and AI clubs at Tudor Vianu National High School of Computer Science in Bucharest.</p>
+          <p>When I'm off-keyboard, you'll find me travelling, shooting photos, hiking, skiing, biking, swimming, or spending time with my friends.</p>
         </section>
 
-        <section class="links">
-          <h3>Let's Connect</h3>
-          <ul style="display: flex; gap: 1rem;">
+        <nav class="social">
+          <ul>
             <li><a href="https://github.com/ahossu/">GitHub</a></li>
             <li><a href="https://discord.com/users/691188707084206102">Discord</a></li>
             <li><a href="https://www.linkedin.com/in/alexandru-hossu/">LinkedIn</a></li>
             <li><a href="https://x.com/alex_hossu">X</a></li>
           </ul>
-        </section>
+        </nav>
       </main>
 
       <footer class="site-footer">
