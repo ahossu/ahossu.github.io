@@ -249,7 +249,7 @@
                 <span class="tag">CVSS 6.1 Medium</span>
               </div>
               <p class="post-excerpt">
-                gdk-pixbuf is the image-loading library used by GTK — the toolkit behind GNOME, gedit, and most Linux desktop applications. It parses Apple icon (.icns) files, and a crafted icon can make it read past the end of a heap buffer, potentially crashing the application or leaking adjacent memory just by opening a rogue file. <code>uncompress()</code> takes a pixel count and a source pointer but no source length, reading compressed pixel data until <code>size×size</code> pixels are decoded regardless of how many bytes the block actually contains. <code>load_icon()</code> computes the valid payload length from the block header but never forwards it to the decompressor. All four legacy RLE icon sizes (16×16 through 128×128) are affected, reachable from any GTK application that opens a file dialog. CVE-2026-18090 assigned 2026-08-03; unfixed as of publication.
+                gdk-pixbuf is the image-loading library used by GTK — the toolkit behind GNOME, gedit, and most Linux desktop applications. It parses Apple icon (.icns) files, and a crafted icon can make it read past the end of a heap buffer, potentially crashing the application or leaking adjacent memory just by opening a rogue file. <code>uncompress()</code> takes a pixel count and a source pointer but no source length, reading compressed pixel data until <code>size×size</code> pixels are decoded regardless of how many bytes the block actually contains. <code>load_icon()</code> computes the valid payload length from the block header but never forwards it to the decompressor. All four legacy RLE icon sizes (16×16 through 128×128) are affected, reachable from any GTK application that opens a file dialog. CVE-2026-18090 assigned 2026-08-03 (CVSS 6.1 Medium); unfixed as of publication.
               </p>
             </a>
 
@@ -368,7 +368,7 @@
                 <span class="tag">CVSS 9.8 Critical</span>
               </div>
               <p class="post-excerpt">
-                iSCSI lets servers expose raw block storage over a network as if it were a locally attached drive. The CHAP handshake is supposed to authenticate who can connect — but this vulnerability allows an attacker on the network to overflow a kernel heap buffer before authentication completes, using only a crafted username. The BASE64 branch of <code>chap_server_compute_hash()</code> passes up to 127 attacker-controlled characters to <code>chap_base64_decode()</code> without a length check, writing 95 bytes into a 16- or 32-byte heap object. Confirmed with KASAN on linux-next, patch submitted to Martin K. Petersen with <code>Fixes: 1e5733883421</code>. CVE-2026-63886 assigned 2026-07-19.
+                iSCSI lets servers expose raw block storage over a network as if it were a locally attached drive. The CHAP handshake is supposed to authenticate who can connect — but this vulnerability allows an attacker on the network to overflow a kernel heap buffer before authentication completes, using only a crafted username. The BASE64 branch of <code>chap_server_compute_hash()</code> passes up to 127 attacker-controlled characters to <code>chap_base64_decode()</code> without a length check, writing 95 bytes into a 16- or 32-byte heap object. Confirmed with KASAN on linux-next, patch submitted to Martin K. Petersen with <code>Fixes: 1e5733883421</code>. CVE-2026-63886 assigned 2026-07-19 (CVSS 9.8 Critical).
               </p>
             </a>
 
@@ -389,7 +389,7 @@
                 <span class="tag">CVSS 8.8 High</span>
               </div>
               <p class="post-excerpt">
-                Every Linux system with WiFi uses mac80211, the kernel's shared wireless networking stack. WiFi 7 added a new protocol feature (EPCS — Emergency Preparedness Communications Service), and its implementation has a classic one-off mistake: a 4-bit field from a rogue access point's beacon frame can index into a 15-slot array with values up to 15. A 4-bit <code>link_id</code> from a PRIO_ACCESS ML element can be 0–15, but <code>sdata->link[]</code> has only 15 entries. Index 15 reads into <code>activate_links_work</code>, bypasses the NULL check, and crashes the kernel via <code>ieee80211_sta_wmm_params()</code>. Any rogue WiFi 7 AP within radio range can trigger it with no authentication required. Accepted by Johannes Berg, backported to stable. CVE-2026-64030 assigned 2026-07-19.
+                Every Linux system with WiFi uses mac80211, the kernel's shared wireless networking stack. WiFi 7 added a new protocol feature (EPCS — Emergency Preparedness Communications Service), and its implementation has a classic one-off mistake: a 4-bit field from a rogue access point's beacon frame can index into a 15-slot array with values up to 15. A 4-bit <code>link_id</code> from a PRIO_ACCESS ML element can be 0–15, but <code>sdata->link[]</code> has only 15 entries. Index 15 reads into <code>activate_links_work</code>, bypasses the NULL check, and crashes the kernel via <code>ieee80211_sta_wmm_params()</code>. Any rogue WiFi 7 AP within radio range can trigger it with no authentication required. Accepted by Johannes Berg, backported to stable. CVE-2026-64030 assigned 2026-07-19 (CVSS 8.8 High).
               </p>
             </a>
 
@@ -454,7 +454,7 @@
                 <span class="tag">CVSS 7.8–8.8 High</span>
               </div>
               <p class="post-excerpt">
-                The rtl8723bs is a cheap WiFi+Bluetooth chip found in millions of budget laptops and single-board computers. Its Linux kernel driver accepted 802.11 management frames without checking their length, meaning a rogue access point within radio range could corrupt kernel heap memory just by transmitting a crafted packet — no user interaction, no authentication required. <code>OnAuthClient()</code> was the primary entry point, but missing bounds checks span thirteen functions across the driver. Three patch series plus a separate nl80211 fix, eight commits total, backported to every active LTS tree. CVEs assigned: CVE-2026-64440, CVE-2026-64441, CVE-2026-64442, CVE-2026-64443, CVE-2026-64444, CVE-2026-64445, CVE-2026-64446, CVE-2026-64536.
+                The rtl8723bs is a cheap WiFi+Bluetooth chip found in millions of budget laptops and single-board computers. Its Linux kernel driver accepted 802.11 management frames without checking their length, meaning a rogue access point within radio range could corrupt kernel heap memory just by transmitting a crafted packet — no user interaction, no authentication required. <code>OnAuthClient()</code> was the primary entry point, but missing bounds checks span thirteen functions across the driver. Three patch series plus a separate nl80211 fix, eight commits total, backported to every active LTS tree. CVEs assigned: CVE-2026-64440, CVE-2026-64441, CVE-2026-64442, CVE-2026-64443, CVE-2026-64444, CVE-2026-64445, CVE-2026-64446, CVE-2026-64536 (CVSS 7.8–8.8 High).
               </p>
             </a>
 
