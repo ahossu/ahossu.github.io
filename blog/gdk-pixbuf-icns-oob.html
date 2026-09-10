@@ -5,7 +5,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
     <title>gdk-pixbuf ICNS: Heap OOB Read in uncompress() (CVE-2026-18090)</title>
-    <meta name="description" content="CVE-2026-18090. Heap out-of-bounds read in the ICNS image loader in gdk-pixbuf. uncompress() in io-icns.c takes a source pointer and a pixel count but no source length, and reads from the compressed stream until size×size pixels have been decoded — regardless of how many bytes are actually in the icon block. load_icon() computes the valid source length from the block header but never passes it to the decompressor. A crafted .icns file with a zero-byte payload triggers an unbounded read into adjacent heap memory, reachable from any GTK application that opens an image file.">
+    <meta name="description" content="CVE-2026-18090 (CVSS 6.1 Medium): heap out-of-bounds read in the ICNS image loader in gdk-pixbuf. uncompress() in io-icns.c takes a source pointer and a pixel count but no source length, and reads from the compressed stream until size×size pixels have been decoded — regardless of how many bytes are actually in the icon block. load_icon() computes the valid source length from the block header but never passes it to the decompressor. A crafted .icns file with a zero-byte payload triggers an unbounded read into adjacent heap memory, reachable from any GTK application that opens an image file.">
     <meta property="og:title" content="gdk-pixbuf ICNS: Heap OOB Read in uncompress() (CVE-2026-18090)" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
