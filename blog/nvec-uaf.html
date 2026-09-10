@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>nvec: Use-After-Free in nvec_rx_completed() (CVE-2026-72489)</title>
+    <meta name="description" content="CVE-2026-72489: use-after-free in the Linux kernel nvec staging driver. nvec_rx_completed() calls nvec_msg_free() to return a message slot to the pool, then reads data[0] from the same slot. A concurrent nvec_msg_alloc() can claim the freed slot and overwrite data[] before the read. CVSS 8.4 High.">
+    <meta property="og:title" content="nvec: Use-After-Free in nvec_rx_completed() (CVE-2026-72489)" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="/blog/">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>nvec: Use-After-Free in <code>nvec_rx_completed()</code> (CVE-2026-72489)</h1>
+          <p class="post-subtitle">
+            A use-after-free in the nvec staging driver's I2C receive completion handler. When an incomplete transfer is detected, <code>nvec_rx_completed()</code> calls <code>nvec_msg_free()</code> to mark the current RX message slot as available in the shared pool, then immediately reads <code>nvec->rx->data[0]</code> from that same slot to check whether to signal the waiter. A concurrent <code>nvec_msg_alloc()</code> caller can claim the slot the instant <code>nvec_msg_free()</code> clears the <code>used</code> flag, overwriting <code>data[]</code> before the read. The fix is to snapshot the message type byte before calling <code>nvec_msg_free()</code>.
+          </p>
+          <p class="post-meta">
+            <span>Linux Kernel • Vulnerability Research</span>
+            <span>Kernel Security</span>
+            <span>by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Linux Kernel</span>
+            <span class="tag">Staging Driver</span>
+            <span class="tag">Tegra</span>
+            <span class="tag">Use-After-Free</span>
+            <span class="tag">Race Condition</span>
+            <span class="tag">CVE-2026-72489</span>
+            <span class="tag">CVSS 8.4 High</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#background">1. Background</a></li>
+            <li><a href="#message-pool">2. The message pool</a></li>
+            <li><a href="#vulnerable-code">3. The vulnerable code</a></li>
+            <li><a href="#race-window">4. The race window</a></li>
+            <li><a href="#fix">5. The fix</a></li>
+            <li><a href="#patch">6. Patch status</a></li>
+          </ul>
+        </nav>
+
+        <section id="background">
+          <h2>1. Background</h2>
+          <p>I found the bug while reading through <code>nvec_rx_completed()</code> in <code>nvec.c</code> — the receive completion handler in the nvec staging driver (<code>drivers/staging/nvec/</code>), which speaks I2C to the NVIDIA Embedded Controller on Tegra platforms — looking at whether message pool operations were being done in the right order relative to any subsequent reads from the same slot.</p>
+          <p>They weren't.</p>
+        </section>
+
+        <section id="message-pool">
+          <h2>2. The message pool</h2>
+          <p>The nvec driver maintains a static pool of 64 <code>nvec_msg</code> structs inside the <code>nvec_chip</code> struct. Each slot has an <code>atomic_t used</code> field that acts as the sole allocator flag:</p>
+          <pre><code>/* nvec.h */
+struct nvec_msg {
+    struct list_head node;
+    unsigned char data[NVEC_MSG_SIZE];
+    unsigned short size;
+    unsigned short pos;
+    atomic_t used;
+};</code></pre>
+          <p><code>nvec_msg_alloc()</code> claims a free slot with a lockless CAS:</p>
+          <pre><code>/* nvec.c */
+static struct nvec_msg *nvec_msg_alloc(struct nvec_chip *nvec,
+                                       enum nvec_msg_category category)
+{
+    int i = (category == NVEC_MSG_TX) ? (NVEC_POOL_SIZE / 4) : 0;
+
+    for (; i < NVEC_POOL_SIZE; i++) {
+        if (atomic_xchg(&nvec->msg_pool[i].used, 1) == 0)
+            return &nvec->msg_pool[i];
+    }
+    return NULL;
+}</code></pre>
+          <p><code>nvec_msg_free()</code> does not heap-free anything. It marks a slot available for immediate reuse:</p>
+          <pre><code>/* nvec.c */
+static void nvec_msg_free(struct nvec_chip *nvec, struct nvec_msg *msg)
+{
+    if (msg != &nvec->tx_scratch)
+        atomic_set(&msg->used, 0);
+}</code></pre>
+          <p>Once <code>atomic_set(&msg->used, 0)</code> executes, any CPU running <code>nvec_msg_alloc()</code> can claim the slot and start writing new data into its <code>data[]</code> array.</p>
+        </section>
+
+        <section id="vulnerable-code">
+          <h2>3. The vulnerable code</h2>
+          <p><code>nvec_rx_completed()</code> is called from the I2C transfer completion path when a receive operation finishes. When the received data is shorter than the expected message size — <code>nvec->rx->pos != nvec_msg_size(nvec->rx)</code> — the driver handles an incomplete transfer. There is a documented quirk: battery subsystem messages (<code>NVEC_BAT</code>) are often incomplete, and skipping the completion signal there causes the EC round-trip to hang. So even for incomplete battery messages, the driver must call <code>complete(&amp;nvec->ec_transfer)</code> to unblock the waiter.</p>
+          <p>Before the fix, the code did this:</p>
+          <pre><code>/* nvec.c — nvec_rx_completed(), before the fix */
+static void nvec_rx_completed(struct nvec_chip *nvec)
+{
+    if (nvec->rx->pos != nvec_msg_size(nvec->rx)) {
+        dev_err(nvec->dev, "RX incomplete: ...\n");
+
+        nvec_msg_free(nvec, nvec->rx);   /* atomic_set(&msg->used, 0) — slot reclaimable */
+        nvec->state = 0;
+
+        /* Battery quirk - Often incomplete, and likes to crash */
+        if (nvec->rx->data[0] == NVEC_BAT)   /* ← UAF: slot may already be reallocated */
+            complete(&nvec->ec_transfer);
+
+        return;
+    }
+    ...
+}</code></pre>
+          <p>The check on the last line reads <code>nvec->rx->data[0]</code> from a slot that was freed two lines earlier. The pointer <code>nvec->rx</code> still points to the same pool location, but that location is now fair game for any concurrent allocator.</p>
+        </section>
+
+        <section id="race-window">
+          <h2>4. The race window</h2>
+          <p>The race opens at the <code>atomic_set(&amp;msg->used, 0)</code> inside <code>nvec_msg_free()</code> and closes at the <code>nvec->rx->data[0]</code> read two instructions later. Any concurrent path calling <code>nvec_msg_alloc()</code> can win this window — the typical trigger is another I2C receive completing on a different CPU and claiming the just-freed slot for its own incoming bytes.</p>
+          <p>If the slot is reallocated between the free and the read, <code>data[0]</code> holds whatever the new transfer wrote first — not the type byte of the original partial battery message. <code>nvec_rx_completed()</code> then decides whether to call <code>complete(&amp;nvec->ec_transfer)</code> based on a byte that belongs to a different message. The EC command waiter either stalls until the 5-second timeout fires, or wakes up prematurely with the wrong transfer state.</p>
+          <ul>
+            <li><strong>Missed completion:</strong> the message was from the battery subsystem (<code>NVEC_BAT</code>), but the recycled byte is not <code>NVEC_BAT</code>. The <code>complete()</code> call is skipped. The EC command waiter times out after 5 seconds, leaving the driver's internal state out of sync with the EC.</li>
+            <li><strong>Spurious completion:</strong> the message was not from the battery, but the recycled byte happens to equal <code>NVEC_BAT</code>. <code>complete(&amp;nvec->ec_transfer)</code> is called for the wrong message, waking a waiter that will now process stale or corrupted data.</li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>5. The fix</h2>
+          <p>The fix snapshots <code>data[0]</code> into a local variable <em>before</em> calling <code>nvec_msg_free()</code>, while the slot is still owned by the current call:</p>
+          <pre><code> static void nvec_rx_completed(struct nvec_chip *nvec)
+ {
+     if (nvec->rx->pos != nvec_msg_size(nvec->rx)) {
++        unsigned char msg_type = nvec->rx->data[0];
+
+         nvec_msg_free(nvec, nvec->rx);
+         nvec->state = 0;
+
+         /* Battery quirk - Often incomplete, and likes to crash */
+-        if (nvec->rx->data[0] == NVEC_BAT)
++        if (msg_type == NVEC_BAT)
+             complete(&nvec->ec_transfer);
+
+         return;
+     }
+     ...
+ }</code></pre>
+          <p>Once <code>msg_type</code> is captured, the slot can be recycled by a concurrent allocator without affecting the check. The decision to call <code>complete()</code> is now based on data that was read while the slot was still exclusively owned.</p>
+        </section>
+
+        <section id="patch">
+          <h2>6. Patch status</h2>
+          <p>The patch was submitted to the staging tree on 2026-04-27 and merged as upstream commit <a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=26813881181deb3a32fbb59eadb2599cbe8423f6">26813881181d</a>.</p>
+          <p>The nvec driver has been in the kernel since the Tegra staging era, so the fix was backported to all active stable trees simultaneously on 2026-07-24:</p>
+          <ul>
+            <li><strong>7.1.5</strong> — commit <a href="https://git.kernel.org/stable/c/5de04caa46b635e180cecbd164e333eca535db94">5de04caa</a></li>
+            <li><strong>6.18.40</strong> — commit <a href="https://git.kernel.org/stable/c/bb3d592c7d6c4ec8ac6640c690ca13298e7e8e90">bb3d592c</a></li>
+            <li><strong>6.12.97</strong> — commit <a href="https://git.kernel.org/stable/c/f19a5bc059051143c489dd6f79a0f9c3bfd13aea">f19a5bc0</a></li>
+            <li><strong>6.6.145</strong> — commit <a href="https://git.kernel.org/stable/c/08626fcfe12308ca3f8b22c538ba7dee0b2dce7a">08626fcf</a></li>
+            <li><strong>6.1.178</strong> — commit <a href="https://git.kernel.org/stable/c/9f7fe4165a1f1014bdadc8e744c0fd3c2d8c0b89">9f7fe416</a></li>
+            <li><strong>5.15.212</strong> — commit <a href="https://git.kernel.org/stable/c/a37625c7b688fcf68a54263528eccbabfd7fa17a">a37625c7</a></li>
+            <li><strong>5.10.261</strong> — commit <a href="https://git.kernel.org/stable/c/6b2ea886ebdae44a2394029844a4e78f58e1587d">6b2ea886</a></li>
+          </ul>
+          <p>CVE-2026-72489 was assigned by the kernel security team (<a href="https://nvd.nist.gov/vuln/detail/CVE-2026-72489">NVD</a>, CVSS 8.4 High).</p>
+          <div class="note">
+            The upstream commit did not carry a <code>Cc: stable</code> tag, so the backports were picked up separately by the stable kernel team. All seven active LTS and current stable branches received the fix in the same release cycle.
+          </div>
+          <p>Other recent kernel work: a double-free in the ipu7 camera driver (<a href="ipu7-double-free">separate post</a>), a heap overflow in the iSCSI target CHAP code (<a href="iscsi-chap-base64-overflow">separate post</a>), and patch series for the rtl8723bs WiFi driver (<a href="rtl8723bs-wifi-overflow">separate post</a>).</p>
+        </section>
+
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>

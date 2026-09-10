@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>ipu7: Double-Free and Use-After-Free in Error Paths (CVE-2026-64447)</title>
+    <meta name="description" content="CVE-2026-64447: double-free and use-after-free in the Linux kernel ipu7 staging driver. Both ipu7_isys_init() and ipu7_psys_init() call kfree(pdata) after put_device() has already freed it through ipu7_bus_release(). CVSS 7.8 High, fixed in 7.1.4 and 6.18.39.">
+    <meta property="og:title" content="ipu7: Double-Free and Use-After-Free in Error Paths (CVE-2026-64447)" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="/blog/">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>ipu7: Double-Free and Use-After-Free in Error Paths (CVE-2026-64447)</h1>
+          <p class="post-subtitle">
+            A double-free and use-after-free in the ipu7 staging driver. Both <code>ipu7_isys_init()</code> and <code>ipu7_psys_init()</code> allocate a <code>pdata</code> struct, pass it to <code>ipu7_bus_initialize_device()</code> which stores it in the device and registers a release callback that frees it. On two distinct error paths, the callers then call <code>kfree(pdata)</code> a second time — and on one of them, also dereference the device struct after <code>put_device()</code> has freed it.
+          </p>
+          <p class="post-meta">
+            <span>Linux Kernel • Vulnerability Research</span>
+            <span>Kernel Security</span>
+            <span>by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Linux Kernel</span>
+            <span class="tag">Staging Driver</span>
+            <span class="tag">Intel ipu7</span>
+            <span class="tag">Double-Free</span>
+            <span class="tag">Use-After-Free</span>
+            <span class="tag">CVE-2026-64447</span>
+            <span class="tag">CVSS 7.8 High</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#background">1. Background</a></li>
+            <li><a href="#ownership">2. Who owns pdata</a></li>
+            <li><a href="#bug1">3. Bug 1 — double-free + UAF on mmu_init failure</a></li>
+            <li><a href="#bug2">4. Bug 2 — double-free on bus_add_device failure</a></li>
+            <li><a href="#affected">5. Affected hardware</a></li>
+            <li><a href="#fix">6. The fix</a></li>
+            <li><a href="#patch">7. Patch status</a></li>
+          </ul>
+        </nav>
+
+        <section id="background">
+          <h2>1. Background</h2>
+          <p>The ipu7 staging driver was merged in commit <code>b7fe4c0019b1</code> to support the camera subsystem in Intel Meteor Lake and Lunar Lake processors — <code>drivers/staging/media/ipu7/</code> in the kernel tree, landed while the upstream API was still under review.</p>
+          <p>I found both bugs while reading through <code>ipu7_isys_init()</code> and <code>ipu7_psys_init()</code> in <code>ipu7.c</code> — the driver had just been merged to staging and the auxiliary bus lifetime rules are subtle, so I went through the error paths to check whether <code>pdata</code> ownership was being respected after <code>ipu7_bus_initialize_device()</code> stored it in the device struct. Both functions allocate <code>pdata</code> with <code>kzalloc()</code>, pass it to the device initializer which stores the pointer and registers a release callback that frees it — and then, on two separate error paths, call <code>kfree(pdata)</code> themselves. The device model had already freed it.</p>
+        </section>
+
+        <section id="ownership">
+          <h2>2. Who owns pdata</h2>
+          <p><code>ipu7_bus_initialize_device()</code> takes the caller-allocated <code>pdata</code> pointer and stores it inside the new device struct:</p>
+          <pre><code>adev->pdata = pdata;
+...
+auxdev->dev.release = ipu7_bus_release;</code></pre>
+          <p>After <code>auxiliary_device_init()</code> succeeds, the device model owns the object. From that point on, <code>put_device(&amp;adev->auxdev.dev)</code> — called whenever the reference count hits zero — triggers the release callback:</p>
+          <pre><code>static void ipu7_bus_release(struct device *dev)
+{
+    struct ipu7_bus_device *adev = to_ipu7_bus_device(dev);
+
+    kfree(adev->pdata);
+    kfree(adev);
+}</code></pre>
+          <p><code>ipu7_bus_release()</code> frees both <code>pdata</code> and the device struct itself. A caller that calls <code>put_device()</code> must not touch either pointer afterward.</p>
+        </section>
+
+        <section id="bug1">
+          <h2>3. Bug 1 — double-free + UAF on mmu_init failure</h2>
+          <p>After the auxiliary device is initialized, both init functions set up the MMU for the sub-device. If that fails, the old error path was:</p>
+          <pre><code>/* ipu7.c — before the fix (ipu7_isys_init) */
+if (IS_ERR(isys_adev->mmu)) {
+    dev_err_probe(dev, PTR_ERR(isys_adev->mmu),
+                  "ipu7_mmu_init(isys_adev->mmu) failed\n");
+    put_device(&isys_adev->auxdev.dev);   /* → ipu7_bus_release:
+                                               kfree(isys_adev->pdata)  ← pdata freed
+                                               kfree(isys_adev)         ← adev freed */
+    kfree(pdata);                          /* ← double-free: pdata already freed above */
+    return ERR_CAST(isys_adev->mmu);       /* ← UAF: isys_adev is freed */
+}</code></pre>
+          <p><code>put_device()</code> drops the refcount to zero, which calls <code>ipu7_bus_release()</code>. That function frees both <code>isys_adev->pdata</code> (the same pointer as <code>pdata</code> in the caller) and <code>isys_adev</code> itself. The subsequent <code>kfree(pdata)</code> is a double-free. The <code>ERR_CAST(isys_adev->mmu)</code> on the next line reads a field from memory that has just been freed — a use-after-free.</p>
+          <p>The same pattern appears verbatim in <code>ipu7_psys_init()</code> for the PSYS sub-device.</p>
+        </section>
+
+        <section id="bug2">
+          <h2>4. Bug 2 — double-free on bus_add_device failure</h2>
+          <p>Both functions have a second error path when <code>ipu7_bus_add_device()</code> fails. Inside that function, on failure, <code>auxiliary_device_uninit()</code> is called, which calls <code>put_device()</code> — again triggering <code>ipu7_bus_release()</code> and freeing <code>pdata</code>. The old callers then did this:</p>
+          <pre><code>ret = ipu7_bus_add_device(isys_adev);
+if (ret) {
+    kfree(pdata);          /* ← double-free: already freed inside ipu7_bus_add_device */
+    return ERR_PTR(ret);
+}</code></pre>
+          <p>Again, the same in both functions.</p>
+        </section>
+
+        <section id="affected">
+          <h2>5. Affected hardware</h2>
+          <p>The ipu7 driver covers Intel Meteor Lake (Core Ultra Series 1) and Lunar Lake (Core Ultra Series 2) — the platforms that introduced IPU7. Older Intel platforms use the ipu6 driver and are not affected. The bug is in the initialization path, which runs when the module loads at boot or on first use on the affected hardware.</p>
+        </section>
+
+        <section id="fix">
+          <h2>6. The fix</h2>
+          <p>For Bug 1, the fix saves the error code <em>before</em> calling <code>put_device()</code>, while <code>isys_adev</code> is still valid, then returns it without touching the freed pointer:</p>
+          <pre><code> if (IS_ERR(isys_adev->mmu)) {
+-    dev_err_probe(dev, PTR_ERR(isys_adev->mmu),
+-                  "ipu7_mmu_init(isys_adev->mmu) failed\n");
++    ret = dev_err_probe(dev, PTR_ERR(isys_adev->mmu),
++                        "ipu7_mmu_init(isys_adev->mmu) failed\n");
+     put_device(&isys_adev->auxdev.dev);
+-    kfree(pdata);
+-    return ERR_CAST(isys_adev->mmu);
++    return ERR_PTR(ret);
+ }</code></pre>
+          <p>For Bug 2, the fix removes the manual <code>kfree(pdata)</code> from the caller, since <code>ipu7_bus_add_device()</code> already cleans up through the release callback:</p>
+          <pre><code> ret = ipu7_bus_add_device(isys_adev);
+-if (ret) {
+-    kfree(pdata);
++if (ret)
+     return ERR_PTR(ret);
+-}</code></pre>
+          <p>Both changes apply identically to <code>ipu7_isys_init()</code> and <code>ipu7_psys_init()</code>. The patch was reviewed by Dan Carpenter and signed off by Sakari Ailus (Intel, ipu7 maintainer).</p>
+        </section>
+
+        <section id="patch">
+          <h2>7. Patch status</h2>
+          <p>The fix was submitted to the staging tree on 2026-04-13 and merged as upstream commit <a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d3a9a8cf2d7fd61a2f63df61f6cbc0a9bb007cc0">d3a9a8cf2d7f</a> with <code>Fixes: b7fe4c0019b1</code>. The ipu7 driver does not exist in LTS kernels older than 6.18, so stable backports went to two trees only:</p>
+          <ul>
+            <li><strong>7.1.4</strong> (released 2026-07-18) — commit <a href="https://git.kernel.org/stable/c/837c1f9655421055f751ed34745e820a54a27642">837c1f96</a></li>
+            <li><strong>6.18.39</strong> (released 2026-07-18) — commit <a href="https://git.kernel.org/stable/c/b5ddc7257bee71f5b8cf9083e2b0ac0427e9fbb3">b5ddc725</a></li>
+          </ul>
+          <p>CVE-2026-64447 was assigned by the kernel security team (<a href="https://nvd.nist.gov/vuln/detail/CVE-2026-64447">NVD</a>, CVSS 7.8 High).</p>
+          <div class="note">
+            The bug is in the driver initialization path — triggered when the ipu7 module loads on Meteor Lake or Lunar Lake hardware. The fix is present in 7.1.4 and 6.18.39 and all later releases.
+          </div>
+          <p>Other recent kernel work: a use-after-free in the nvec staging driver (<a href="nvec-uaf">separate post</a>), a heap overflow in the iSCSI target CHAP code (<a href="iscsi-chap-base64-overflow">separate post</a>), and patch series for the rtl8723bs WiFi driver (<a href="rtl8723bs-wifi-overflow">separate post</a>).</p>
+        </section>
+
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>
