@@ -4,9 +4,9 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-    <title>mac80211 EPCS: OOB Array Access in the Linux Kernel WiFi Stack</title>
-    <meta name="description" content="Out-of-bounds array access in ieee80211_ml_epcs() in the Linux kernel mac80211 WiFi stack: a rogue WiFi 7 AP can send an EPCS Enable Response with link_id 15, reading past sdata->link[] (15 entries) into adjacent memory and crashing the kernel.">
-    <meta property="og:title" content="mac80211 EPCS: OOB Array Access in the Linux Kernel WiFi Stack" />
+    <title>mac80211 EPCS: OOB Array Access in the Linux Kernel WiFi Stack (CVE-2026-64030)</title>
+    <meta name="description" content="CVE-2026-64030: out-of-bounds array access in ieee80211_ml_epcs() in the Linux kernel mac80211 WiFi stack: a rogue WiFi 7 AP can send an EPCS Enable Response with link_id 15, reading past sdata->link[] (15 entries) into adjacent memory and crashing the kernel.">
+    <meta property="og:title" content="mac80211 EPCS: OOB Array Access in the Linux Kernel WiFi Stack (CVE-2026-64030)" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
     <meta name="twitter:card" content="summary" />
@@ -150,7 +150,7 @@
         <p class="back-link">← <a href="/blog/">Back to blog</a></p>
 
         <header class="post-header">
-          <h1>mac80211 EPCS: OOB Array Access in the Linux Kernel WiFi Stack</h1>
+          <h1>mac80211 EPCS: OOB Array Access in the Linux Kernel WiFi Stack (CVE-2026-64030)</h1>
           <p class="post-subtitle">
             An out-of-bounds array access in the mainline mac80211 WiFi stack, triggerable by a rogue WiFi 7 AP. The EPCS handler in <code>ieee80211_ml_epcs()</code> extracts a 4-bit <code>link_id</code> from an attacker-controlled frame field, producing values 0–15. The <code>sdata->link[]</code> array has 15 entries (indices 0–14), so link_id 15 reads past the end of the array into adjacent memory and crashes the kernel.
           </p>
@@ -165,6 +165,7 @@
             <span class="tag">WiFi 7</span>
             <span class="tag">OOB Access</span>
             <span class="tag">Kernel Crash</span>
+            <span class="tag">CVE-2026-64030</span>
           </div>
         </header>
 
@@ -246,7 +247,7 @@ if (!link)
 
         <section id="patch">
           <h2>7. Patch status</h2>
-          <p>The patch was sent to the linux-wireless mailing list on 2026-05-15 and accepted by Johannes Berg (Intel) as upstream commit <a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f718506edd2d9c6a308ded9d13c632bf7b7d5a2c">f718506edd2d</a>. Greg Kroah-Hartman backported it to the 6.18-stable and 7.0-stable trees.</p>
+          <p>The patch was sent to the linux-wireless mailing list on 2026-05-15 and accepted by Johannes Berg (Intel) as upstream commit <a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f718506edd2d9c6a308ded9d13c632bf7b7d5a2c">f718506edd2d</a>. Greg Kroah-Hartman backported it to the 6.18-stable and 7.0-stable trees. CVE-2026-64030 was assigned by the kernel security team (<a href="https://nvd.nist.gov/vuln/detail/CVE-2026-64030">NVD</a>).</p>
           <p>Other recent kernel work: a heap buffer overflow in the iSCSI target CHAP authentication code (<a href="iscsi-chap-base64-overflow">separate post</a>), and three patch series for the rtl8723bs staging WiFi driver (<a href="rtl8723bs-wifi-overflow">separate post</a>).</p>
           <div class="note">
             The bug was introduced in v6.15 (February 2025) and affects every kernel release since. The fix has been backported to the 6.18 and 7.0 stable trees. Kernels between v6.15 and v6.17 that are still in use should apply the patch manually or cherry-pick from the upstream commit.
