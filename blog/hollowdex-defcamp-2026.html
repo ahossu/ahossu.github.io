@@ -218,7 +218,7 @@ org.jf.util.ExceptionWithContext: The last instruction in method Lcom/hollowdex/
           <p><code>libhollowdex.so</code> exports exactly one symbol:</p>
           <pre><code>Symbol table '.dynsym' contains 16 entries:
   15: 0000000000001900   732 FUNC    GLOBAL DEFAULT   12 JNI_OnLoad</code></pre>
-          <p>The other fifteen entries are <code>UND</code> imports. There is no <code>RegisterNatives</code> and no <code>Java_com_hollowdex_*</code> stub — the library exists for a side effect, and nothing in Java ever calls into it.</p>
+          <p>The other entries are fourteen <code>UND</code> imports and the reserved null symbol. There is no <code>RegisterNatives</code> and no <code>Java_com_hollowdex_*</code> stub — the library exists for a side effect, and nothing in Java ever calls into it.</p>
         </section>
 
         <section id="patcher">
@@ -251,7 +251,7 @@ struct.pack_into('&lt;I', raw, 0x08, cksum)</code></pre>
           <p>The DEX header defines <code>checksum</code> at <code>0x08</code> as Adler-32 over everything after itself, and <code>signature</code> at <code>0x0C</code> as SHA-1 over everything after itself. The <code>insns</code> region sits inside both ranges, so flipping 312 bytes invalidates both.</p>
           <p>The order matters — SHA-1 first, because it does not cover the checksum field, then Adler-32, because it does cover the signature.</p>
           <div class="note">
-            Skipping this step produces no app at all. ART validates both fields before defining any class, so a stale Adler-32 aborts DEX opening outright. The signature doubles as the dex file's identity for oat and vdex staleness checks, so a stale one also risks ART reusing a cached artifact for the wrong file.
+            Skipping this step breaks the install. <code>dex2oat</code> opens the file with verification on, and a stale Adler-32 fails there. ART itself never checks the SHA-1, and on the warm path it skips the checksum too — but the signature still has to be consistent, because the Adler-32 range starts at <code>0x0C</code> and covers it.
           </div>
         </section>
 
@@ -274,7 +274,7 @@ memcpy(&amp;code_item_off, art_method + 0x08, sizeof(code_item_off));</code></pr
 +0x08  uint32_t             dex_code_item_offset_
 +0x0C  uint32_t             dex_method_index_</code></pre>
           <div class="note">
-            That layout is an Android 10 and 11 one. ART dropped <code>dex_code_item_offset_</code> in Android 12 and derives the code item from <code>dex_method_index_</code> instead, which moves that field up to <code>+0x08</code>. The comment says API 34, and that part of it has not aged well — <code>ArtMethod</code> is private and carries no compatibility guarantee.
+            That layout is an Android 10 and 11 one. ART dropped <code>dex_code_item_offset_</code> in Android 12, moving the code item to a pointer in <code>ptr_sized_fields_.data_</code> and promoting <code>dex_method_index_</code> to <code>+0x08</code>. The comment says API 34, and that part of it has not aged well — <code>ArtMethod</code> is private and carries no compatibility guarantee.
           </div>
           <h3>Finding the mapped DEX</h3>
           <p>Next it has to find where the DEX is mapped:</p>
@@ -285,7 +285,7 @@ memcpy(&amp;code_item_off, art_method + 0x08, sizeof(code_item_off));</code></pr
         const uint8_t *p = reinterpret_cast&lt;const uint8_t *&gt;(start);
         if (p[0]=='d' &amp;&amp; p[1]=='e' &amp;&amp; p[2]=='x' &amp;&amp; p[3]=='\n') {
             result.base = start; ...</code></pre>
-          <p>Three filters — the pathname contains <code>.apk</code>, the permissions are read-only private, and the first four bytes at the mapping base are <code>dex\n</code>. In the disassembly this is three <code>strstr</code> call sites and a byte-wise magic check against <code>0x64</code>, <code>0x65</code>, <code>0x78</code>, <code>0x0a</code>.</p>
+          <p>Three filters — the pathname contains <code>.apk</code>, the mapping is readable and private (<code>r--p</code> or <code>r-xp</code>), and the first four bytes at its base are <code>dex\n</code>. In the disassembly this is three <code>strstr</code> call sites and a byte-wise magic check against <code>0x64</code>, <code>0x65</code>, <code>0x78</code>, <code>0x0a</code>.</p>
           <p>Then the target address, mirroring the patcher exactly:</p>
           <pre><code>const uint8_t *ci = reinterpret_cast&lt;const uint8_t *&gt;(dex.base + code_item_off);
 uint32_t insns_size;
@@ -367,7 +367,7 @@ SHA-256("hollowdex") = 554d47c35cf8ea95 b4bc6cae39400b7a dbe08223b8cea01d...
 
         <section id="solve">
           <h2>Step 5 — solve.py</h2>
-          <p>The static path is entirely offline — unzip, walk the DEX, pull the key from the library, decrypt, invert, hash.</p>
+          <p>The static path is entirely offline — unzip, walk the DEX, decrypt, invert, hash. The key is hardcoded here; it comes out of <code>.rodata</code> once, by hand.</p>
           <pre><code>#!/usr/bin/env python3
 """
 solve.py -- HollowDex CTF challenge solution
@@ -504,13 +504,12 @@ if __name__ == '__main__':
 [+] preimage : &lt;32 hex chars&gt;
 [+] CTF{&lt;64 hex chars&gt;}</code></pre>
           <p>There is a shorter route. Let <code>JNI_OnLoad</code> do the work, then read the now-plaintext bytecode out of the mapped DEX:</p>
-          <pre><code>Interceptor.attach(lib.getExportByName("JNI_OnLoad"), {
-    onLeave: function (_) {
-        Process.enumerateRanges("r--").forEach(function (r) {
-            if (r.base.readU32() !== 0x0A786564) return;   // "dex\n" LE
-            console.log(hexdump(r.base.add(0x062C + 16).readByteArray(312)));
-        });
-    }
+          <pre><code>// JNI_OnLoad has already run by the time the activity is up
+Process.enumerateRanges("r--").forEach(function (r) {
+    try {
+        if (r.base.readU32() !== 0x0A786564) return;   // "dex\n" LE
+        console.log(hexdump(r.base.add(0x062C + 16).readByteArray(312)));
+    } catch (_) {}
 });</code></pre>
           <p>Same 312 bytes, no key extraction, no reversing of the library at all. The XOR layer becomes irrelevant because you never learn the key and never need it. It still leaves the cipher to invert, so the dynamic path skips a layer, not the challenge.</p>
         </section>
@@ -544,8 +543,9 @@ native-code: 'arm64-v8a'</code></pre>
     android:minSdkVersion="34"
     android:targetSdkVersion="34" /&gt;</code></pre>
           <p>Anything at or above 23 clears the install error — but 34 is the right number here, for a reason specific to this challenge.</p>
-          <p>The decryptor hardcodes an <code>ArtMethod</code> field offset, and that structure changes between releases. A declared <code>minSdkVersion</code> is what stops the package manager installing on a platform where the offset means something else and the write lands 312 bytes somewhere arbitrary.</p>
-          <p>The native library is compiled with <code>aarch64-linux-android34-clang++</code>, which sets <code>__ANDROID_API__</code> to 34 and links against the API 34 sysroot — a lower floor would be a lie about what the code needs.</p>
+          <p>The native library is compiled with <code>aarch64-linux-android34-clang++</code>, which sets <code>__ANDROID_API__</code> to 34 and links against the API 34 sysroot, so a lower floor would be a lie about what the code links against.</p>
+          <p>It also settles the <code>+0x08</code> question the wrong way. Android 14 is exactly where that offset is <code>dex_method_index_</code>, which for <code>verifyFlag</code> is 18. The decryptor would read <code>insns_size</code> from <code>dex_base + 30</code>, land inside the header, and try to allocate a few hundred megabytes.</p>
+          <p>The runtime path is decorative on the shipped configuration. It does not affect the challenge — the flag tip says <code>static</code>, the intended solve never loads the library, and the write-up path above is offline from start to finish.</p>
           <p>Rebuilding with the manifest fixed left <code>classes.dex</code> and <code>libhollowdex.so</code> byte-identical to the broken build — the <code>code_item</code> offset, the XOR key and every number here survived unchanged. The resources did not: without <code>&lt;uses-sdk&gt;</code> aapt2 emits four layout variants and a 1,240-byte <code>resources.arsc</code>, so the broken APK had eleven entries instead of eight.</p>
           <div class="note">
             The same trap applies to two more settings. <code>ANDROID_STL=c++_static</code> and the <code>packagingOptions</code> block are equally inert, for the same reason. When you drive <code>aapt2</code>, <code>d8</code>, <code>zipalign</code> and <code>apksigner</code> by hand, <code>build.gradle</code> is documentation, not configuration — every value that matters has to be restated in the manifest or on a command line.
