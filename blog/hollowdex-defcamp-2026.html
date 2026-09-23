@@ -217,7 +217,7 @@ org.jf.util.ExceptionWithContext: The last instruction in method Lcom/hollowdex/
           <p>That string is in the DEX string pool — the one thread connecting the broken method to the native code.</p>
           <p><code>libhollowdex.so</code> exports exactly one symbol:</p>
           <pre><code>Symbol table '.dynsym' contains 16 entries:
-  15: 0000000000001900   732 FUNC    GLOBAL DEFAULT   12 JNI_OnLoad</code></pre>
+    15: 0000000000001900   732 FUNC    GLOBAL DEFAULT   12 JNI_OnLoad</code></pre>
           <p>The other entries are fourteen <code>UND</code> imports and the reserved null symbol. There is no <code>RegisterNatives</code> and no <code>Java_com_hollowdex_*</code> stub — the library exists for a side effect, and nothing in Java ever calls into it.</p>
         </section>
 
@@ -251,7 +251,7 @@ struct.pack_into('&lt;I', raw, 0x08, cksum)</code></pre>
           <p>The DEX header defines <code>checksum</code> at <code>0x08</code> as Adler-32 over everything after itself, and <code>signature</code> at <code>0x0C</code> as SHA-1 over everything after itself. The <code>insns</code> region sits inside both ranges, so flipping 312 bytes invalidates both.</p>
           <p>The order matters — SHA-1 first, because it does not cover the checksum field, then Adler-32, because it does cover the signature.</p>
           <div class="note">
-            Skipping this step breaks the install. <code>dex2oat</code> opens the file with verification on, and a stale Adler-32 fails there. ART itself never checks the SHA-1, and on the warm path it skips the checksum too — but the signature still has to be consistent, because the Adler-32 range starts at <code>0x0C</code> and covers it.
+            The Adler-32 is the one that matters. <code>dex2oat</code> verifies it on a fresh compile, and so does the runtime cold path, which rejects the file outright. ART never checks the SHA-1 at all — <code>dexlayout</code> rewrites dex files and leaves a stale signature that nothing notices. The order still matters, because the signature bytes sit inside the Adler-32 range.
           </div>
         </section>
 
@@ -268,7 +268,7 @@ jmethodID mid = env-&gt;GetMethodID(cls, "verifyFlag", "(Ljava/lang/String;)Z");
 const uint8_t *art_method = reinterpret_cast&lt;const uint8_t *&gt;(mid);
 uint32_t code_item_off;
 memcpy(&amp;code_item_off, art_method + 0x08, sizeof(code_item_off));</code></pre>
-          <p>One instruction after optimization — <code>ldr w25, [x0, #8]</code>. The arithmetic assumes the <code>ArtMethod</code> prologue of a 64-bit build, where <code>declaring_class_</code> is a <code>GcRoot</code> and therefore a 32-bit compressed reference even on ARM64:</p>
+          <p>One instruction after optimization — <code>19b4: b9400819   ldr w25, [x0, #0x8]</code>. The arithmetic assumes the <code>ArtMethod</code> prologue of a 64-bit build, where <code>declaring_class_</code> is a <code>GcRoot</code> and therefore a 32-bit compressed reference even on ARM64:</p>
           <pre><code>+0x00  GcRoot&lt;mirror::Class&gt; declaring_class_   4 bytes
 +0x04  atomic&lt;uint32_t&gt;     access_flags_      4 bytes
 +0x08  uint32_t             dex_code_item_offset_
@@ -320,7 +320,7 @@ static const uint8_t KEY_HALF_2[16] = {
 ...
 for (int i = 0; i &lt; 16; i++) xor_key[i] = KEY_HALF_1[i] ^ KEY_HALF_2[i];</code></pre>
           <p>None of that survives <code>-O2</code>. Both arrays are <code>static const</code>, never address-taken, and consumed only by that loop — so LLVM unrolls it, folds all sixteen XORs at compile time, and dead-strips the sources. What remains is a single 128-bit load:</p>
-          <pre><code>0x1ac4:  ldr q0, [x10, #0x700]</code></pre>
+          <pre><code>1ac4: 3dc1c140   ldr q0, [x10, #0x700]</code></pre>
           <p>Grepping the 5,632-byte library for either half, or even their 4-byte prefixes, finds nothing. Only the folded result exists — file offset <code>0x700</code>, the first object in <code>.rodata</code>:</p>
           <pre><code>00000700: 590e 7a65 14c3 bea1 e3c1 e781 e3c1 ef01  Y.ze............
 00000710: 2f70 726f 632f 7365 6c66 2f6d 6170 7300  /proc/self/maps.
@@ -367,7 +367,8 @@ SHA-256("hollowdex") = 554d47c35cf8ea95 b4bc6cae39400b7a dbe08223b8cea01d...
 
         <section id="solve">
           <h2>Step 5 — solve.py</h2>
-          <p>The static path is entirely offline — unzip, walk the DEX, decrypt, invert, hash. The key is hardcoded here; it comes out of <code>.rodata</code> once, by hand.</p>
+          <p>The static path is entirely offline — unzip, walk the DEX, decrypt, invert, hash.</p>
+          <p>Two values are hardcoded because they were recovered once by hand: the key out of <code>.rodata</code>, and the round constants out of the decrypted smali. The script prints the plaintext it produces, but the inversion runs on those constants.</p>
           <pre><code>#!/usr/bin/env python3
 """
 solve.py -- HollowDex CTF challenge solution
@@ -503,7 +504,7 @@ if __name__ == '__main__':
 [*] first 32 bytes: 1200380e9a006e1017000e000a01130220003221040029009000130110002312
 [+] preimage : &lt;32 hex chars&gt;
 [+] CTF{&lt;64 hex chars&gt;}</code></pre>
-          <p>There is a shorter route. Let <code>JNI_OnLoad</code> do the work, then read the now-plaintext bytecode out of the mapped DEX:</p>
+          <p>There is a shorter route on paper. Let <code>JNI_OnLoad</code> do the work, then read the patched bytecode out of the mapped DEX:</p>
           <pre><code>// JNI_OnLoad has already run by the time the activity is up
 Process.enumerateRanges("r--").forEach(function (r) {
     try {
@@ -511,7 +512,8 @@ Process.enumerateRanges("r--").forEach(function (r) {
         console.log(hexdump(r.base.add(0x062C + 16).readByteArray(312)));
     } catch (_) {}
 });</code></pre>
-          <p>Same 312 bytes, no key extraction, no reversing of the library at all. The XOR layer becomes irrelevant because you never learn the key and never need it. It still leaves the cipher to invert, so the dynamic path skips a layer, not the challenge.</p>
+          <p>Same 312 bytes, no key extraction, no reversing of the library at all — on a platform where the decryptor lands.</p>
+          <p>That is the catch, and the last section explains why it is not this one. On the shipped build the read comes back still encrypted, if the app survives startup at all.</p>
         </section>
 
         <section id="manifest">
@@ -544,8 +546,11 @@ native-code: 'arm64-v8a'</code></pre>
     android:targetSdkVersion="34" /&gt;</code></pre>
           <p>Anything at or above 23 clears the install error — but 34 is the right number here, for a reason specific to this challenge.</p>
           <p>The native library is compiled with <code>aarch64-linux-android34-clang++</code>, which sets <code>__ANDROID_API__</code> to 34 and links against the API 34 sysroot, so a lower floor would be a lie about what the code links against.</p>
-          <p>It also settles the <code>+0x08</code> question the wrong way. Android 14 is exactly where that offset is <code>dex_method_index_</code>, which for <code>verifyFlag</code> is 18. The decryptor would read <code>insns_size</code> from <code>dex_base + 30</code>, land inside the header, and try to allocate a few hundred megabytes.</p>
-          <p>The runtime path is decorative on the shipped configuration. It does not affect the challenge — the flag tip says <code>static</code>, the intended solve never loads the library, and the write-up path above is offline from start to finish.</p>
+          <p>It also settles the <code>+0x08</code> question the wrong way. Android 14 is exactly where that offset is <code>dex_method_index_</code>, which for <code>verifyFlag</code> is 18.</p>
+          <p>The decryptor would then read <code>insns_size</code> from <code>dex_base + 30</code>, landing on the tail of the signature and the low half of <code>file_size</code>. That decodes to 250,874,976 code units — an allocation of 501,749,952 bytes.</p>
+          <p>It never gets that far. <code>libhollowdex.so</code> declares <code>DT_NEEDED libc++_shared.so</code>, which the APK does not bundle and which is not a public system library — the NDK driver was invoked directly, so nothing linked it statically. <code>System.loadLibrary</code> throws from <code>Verifier</code>'s static initializer and the app dies at launch, on every Android version.</p>
+          <p>Past that there is a second blocker. <code>classes.dex</code> is stored deflated, so once the app is dexopt'd the mapping comes from <code>base.vdex</code>, whose maps line contains no <code>.apk</code> and never matches the filter.</p>
+          <p>None of this touches the challenge. The flag tip says <code>static</code>, the intended solve never loads the library, and the path above is offline from start to finish. But the runtime decryptor is not merely unused — it is the thing that would crash the app, and it was never run on a device.</p>
           <p>Rebuilding with the manifest fixed left <code>classes.dex</code> and <code>libhollowdex.so</code> byte-identical to the broken build — the <code>code_item</code> offset, the XOR key and every number here survived unchanged. The resources did not: without <code>&lt;uses-sdk&gt;</code> aapt2 emits four layout variants and a 1,240-byte <code>resources.arsc</code>, so the broken APK had eleven entries instead of eight.</p>
           <div class="note">
             The same trap applies to two more settings. <code>ANDROID_STL=c++_static</code> and the <code>packagingOptions</code> block are equally inert, for the same reason. When you drive <code>aapt2</code>, <code>d8</code>, <code>zipalign</code> and <code>apksigner</code> by hand, <code>build.gradle</code> is documentation, not configuration — every value that matters has to be restated in the manifest or on a command line.
