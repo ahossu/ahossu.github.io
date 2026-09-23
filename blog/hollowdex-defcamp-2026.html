@@ -154,10 +154,10 @@
           <p class="post-subtitle">
             An Android app with one method that no disassembler will touch.
             <code>Verifier.verifyFlag</code> ships with its Dalvik bytecode XOR-encrypted, and
-            <code>JNI_OnLoad</code> repairs it at runtime by locating the mapped DEX through
+            <code>JNI_OnLoad</code> is meant to repair it at runtime by locating the mapped DEX through
             <code>/proc/self/maps</code> and writing the plaintext back through
-            <code>/proc/self/mem</code>. The recovered method turns out to be a three-round ARX
-            Feistel cipher.
+            <code>/proc/self/mem</code>. The recovered method is a three-round ARX Feistel cipher,
+            and the packaging turns out to be its own story.
           </p>
           <p class="post-meta">
             <span>rev • Android • Native</span>
@@ -257,7 +257,7 @@ struct.pack_into('&lt;I', raw, 0x08, cksum)</code></pre>
 
         <section id="decryptor">
           <h2>Step 3 — the runtime decryptor</h2>
-          <p><code>JNI_OnLoad</code> runs when the linker loads the library — inside <code>Verifier</code>'s static initializer, which runs when <code>MainActivity</code> constructs its field. The patch lands long before the first <code>verifyFlag</code> call.</p>
+          <p>ART calls <code>JNI_OnLoad</code> once <code>dlopen</code> returns, inside <code>Verifier</code>'s static initializer, which runs when <code>MainActivity</code> constructs its field. The patch is meant to land long before the first <code>verifyFlag</code> call — whether it does is the last section.</p>
 
           <h3>Finding the method</h3>
           <p>It starts by asking JNI for the method it is about to rewrite:</p>
@@ -537,7 +537,7 @@ Process.enumerateRanges("r--").forEach(function (r) {
     } catch (_) {}
 });</code></pre>
           <p>Same 312 bytes, no key extraction, no reversing of the library at all — on a build where the decryptor lands.</p>
-          <p>This is not that build, and the last section explains why. The read comes back still encrypted, on any Android version, assuming the app gets far enough to be read at all.</p>
+          <p>This is not that build, and the last section explains why. The scan has its own problem too: it needs the DEX to start at a mapping base, which stops being true once the dex is served out of <code>base.vdex</code>.</p>
         </section>
 
         <section id="manifest">
@@ -572,7 +572,7 @@ native-code: 'arm64-v8a'</code></pre>
           <p>The native library is compiled with <code>aarch64-linux-android34-clang++</code>, which sets <code>__ANDROID_API__</code> to 34 and links against the API 34 sysroot, so a lower floor would be a lie about what the code links against.</p>
           <p>It also settles the <code>+0x08</code> question the wrong way. Android 14 is exactly where that offset is <code>dex_method_index_</code>, which for <code>verifyFlag</code> is 18.</p>
           <p>The decryptor would then read <code>insns_size</code> from <code>dex_base + 30</code>, landing on the tail of the signature and the low half of <code>file_size</code>. That decodes to 250,874,976 code units — an allocation of 501,749,952 bytes.</p>
-          <p>It never gets that far. <code>libhollowdex.so</code> declares <code>DT_NEEDED libc++_shared.so</code>, which the APK does not bundle and which is not a public system library — the NDK driver was invoked directly, so nothing linked it statically. <code>System.loadLibrary</code> throws from <code>Verifier</code>'s static initializer and the app dies at launch, on every Android version.</p>
+          <p>It never gets that far. <code>libhollowdex.so</code> declares <code>DT_NEEDED libc++_shared.so</code>, which the APK does not bundle and which is not a public system library — the NDK driver was invoked directly, so nothing linked it statically. <code>System.loadLibrary</code> throws from <code>Verifier</code>'s static initializer and the app dies at launch, on every version it can be installed on.</p>
           <p>Past that there is a second blocker. <code>classes.dex</code> is stored deflated, so once the app is dexopt'd the mapping comes from <code>base.vdex</code>, whose maps line contains no <code>.apk</code> and never matches the filter.</p>
           <p>None of this touches the challenge. The flag tip says <code>static</code>, the intended solve never loads the library, and the path above is offline from start to finish. But the runtime decryptor is not merely unused — it is the thing that would crash the app, and it was never run on a device.</p>
           <p>Rebuilding with the manifest fixed left <code>classes.dex</code> and <code>libhollowdex.so</code> byte-identical to the broken build — the <code>code_item</code> offset, the XOR key and every number here survived unchanged. The resources did not: without <code>&lt;uses-sdk&gt;</code> aapt2 emits four layout variants and a 1,240-byte <code>resources.arsc</code>, so the broken APK had eleven entries instead of eight.</p>
