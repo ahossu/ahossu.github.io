@@ -195,7 +195,7 @@ resources.arsc                 812 B   (stored)
 classes.dex                  3,828 B
 lib/arm64-v8a/libhollowdex.so 5,632 B
 META-INF/                     2,320 B</code></pre>
-          <p>The layout and the string table describe one activity — a title, a monospace field hinted <code>Enter 32-char hex key</code>, a Verify button, and a label set to <code>ACCESS GRANTED</code> or <code>ACCESS DENIED</code>. The Java is four lines of interest:</p>
+          <p>The layout describes one activity — a title, a monospace field hinted <code>Enter 32-char hex key</code>, and a Verify button. The verdict label is empty in the layout and filled from Java, with <code>ACCESS GRANTED</code> or <code>ACCESS DENIED</code>. Four lines of that Java matter:</p>
           <pre><code>private final Verifier verifier = new Verifier();
 ...
 if (verifier.verifyFlag(s)) {
@@ -251,7 +251,7 @@ struct.pack_into('&lt;I', raw, 0x08, cksum)</code></pre>
           <p>The DEX header defines <code>checksum</code> at <code>0x08</code> as Adler-32 over everything after itself, and <code>signature</code> at <code>0x0C</code> as SHA-1 over everything after itself. The <code>insns</code> region sits inside both ranges, so flipping 312 bytes invalidates both.</p>
           <p>The order matters — SHA-1 first, because it does not cover the checksum field, then Adler-32, because it does cover the signature.</p>
           <div class="note">
-            The Adler-32 is the one that matters. <code>dex2oat</code> verifies it on a fresh compile, and so does the runtime cold path, which rejects the file outright. ART never checks the SHA-1 at all — <code>dexlayout</code> rewrites dex files and leaves a stale signature that nothing notices.
+            The Adler-32 is the one that matters. <code>dex2oat</code> verifies it on a fresh compile, and the runtime cold path rejects the file outright whenever checksum verification is on. ART never checks the SHA-1 at all — <code>dexlayout</code> rewrites dex files and leaves a stale signature that nothing notices.
           </div>
         </section>
 
@@ -268,13 +268,13 @@ jmethodID mid = env-&gt;GetMethodID(cls, "verifyFlag", "(Ljava/lang/String;)Z");
 const uint8_t *art_method = reinterpret_cast&lt;const uint8_t *&gt;(mid);
 uint32_t code_item_off;
 memcpy(&amp;code_item_off, art_method + 0x08, sizeof(code_item_off));</code></pre>
-          <p>One instruction after optimization — <code>ldr w25, [x0, #0x8]</code> at <code>0x19b4</code>. The arithmetic assumes the <code>ArtMethod</code> prologue of a 64-bit build, where <code>declaring_class_</code> is a <code>GcRoot</code> and therefore a 32-bit compressed reference even on ARM64:</p>
+          <p>One instruction after optimization — <code>ldr w25, [x0, #8]</code> at <code>0x19b4</code>. The arithmetic assumes the <code>ArtMethod</code> prologue of a 64-bit build, where <code>declaring_class_</code> is a <code>GcRoot</code> and therefore a 32-bit compressed reference even on ARM64:</p>
           <pre><code>+0x00  GcRoot&lt;mirror::Class&gt; declaring_class_   4 bytes
 +0x04  atomic&lt;uint32_t&gt;     access_flags_      4 bytes
 +0x08  uint32_t             dex_code_item_offset_
 +0x0C  uint32_t             dex_method_index_</code></pre>
           <div class="note">
-            That layout held from Android 7 through 11. ART dropped <code>dex_code_item_offset_</code> in Android 12, moving the code item to a pointer in <code>ptr_sized_fields_.data_</code> and promoting <code>dex_method_index_</code> to <code>+0x08</code>. The comment says API 34, and that part of it has not aged well — <code>ArtMethod</code> is private and carries no compatibility guarantee.
+            Those offsets held from Android 7 through 11. ART dropped <code>dex_code_item_offset_</code> in Android 12, moving the code item to a pointer in <code>ptr_sized_fields_.data_</code> and promoting <code>dex_method_index_</code> to <code>+0x08</code>. The comment says API 34, and that part of it has not aged well — <code>ArtMethod</code> is private and carries no compatibility guarantee.
           </div>
           <h3>Finding the mapped DEX</h3>
           <p>Next it has to find where the DEX is mapped:</p>
@@ -285,7 +285,7 @@ memcpy(&amp;code_item_off, art_method + 0x08, sizeof(code_item_off));</code></pr
         const uint8_t *p = reinterpret_cast&lt;const uint8_t *&gt;(start);
         if (p[0]=='d' &amp;&amp; p[1]=='e' &amp;&amp; p[2]=='x' &amp;&amp; p[3]=='\n') {
             result.base = start; ...</code></pre>
-          <p>Three filters — the pathname contains <code>.apk</code>, the mapping is readable and private (<code>r--p</code> or <code>r-xp</code>), and the first four bytes at its base are <code>dex\n</code>. In the disassembly this is three <code>strstr</code> call sites and a byte-wise magic check against <code>0x64</code>, <code>0x65</code>, <code>0x78</code>, <code>0x0a</code>.</p>
+          <p>Three filters — the pathname contains <code>.apk</code>, the mapping is readable, private and not writable (<code>r--p</code> or <code>r-xp</code>), and the first four bytes at its base are <code>dex\n</code>. In the disassembly this is three <code>strstr</code> call sites and a byte-wise magic check against <code>0x64</code>, <code>0x65</code>, <code>0x78</code>, <code>0x0a</code>.</p>
           <p>Then the target address, mirroring the patcher exactly:</p>
           <pre><code>const uint8_t *ci = reinterpret_cast&lt;const uint8_t *&gt;(dex.base + code_item_off);
 uint32_t insns_size;
@@ -301,7 +301,7 @@ if (fd &gt;= 0) {
     close(fd);
 }</code></pre>
           <p>A direct store would fault — the mapping was filtered to <code>r--p</code> or <code>r-xp</code>, so it has no <code>PROT_WRITE</code>. <code>mprotect</code> is the obvious alternative.</p>
-          <p>It is also the loud one. It splits the VMA and rewrites the permission bits, so anything re-reading <code>/proc/self/maps</code> sees a dex mapping that is, or was, writable.</p>
+          <p>It is also the loud one. It rewrites the permission bits and, on a sub-range, splits the VMA, so anything sampling <code>/proc/self/maps</code> while the window is open sees a writable dex mapping.</p>
           <p>The write here goes through <code>access_remote_vm()</code> with <code>FOLL_FORCE</code>, which bypasses the PTE write protection on a private mapping by breaking COW. No VMA permission changes, so the maps line reads the same before and after.</p>
           <p>The region is <code>MAP_PRIVATE</code>, so the forced write is copy-on-write — only the writing process would see the plaintext. The file on disk is never touched, so pulling the APK still yields the encrypted DEX.</p>
         </section>
@@ -327,7 +327,7 @@ for (int i = 0; i &lt; 16; i++) xor_key[i] = KEY_HALF_1[i] ^ KEY_HALF_2[i];</cod
 00000720: 636f 6d2f 686f 6c6c 6f77 6465 782f 5665  com/hollowdex/Ve
 00000730: 7269 6669 6572 0072 2d78 7000 256c 782d  rifier.r-xp.%lx-</code></pre>
           <p>The two halves are a decoy that costs a reverser nothing, because the optimizer already removed them. Source-level obfuscation below the compiler's abstraction level is free to delete.</p>
-          <p>XOR the 312 bytes with <code>key[i % 16]</code>, write them back into a copy of <code>classes.dex</code>, fix the SHA-1 and Adler-32, and baksmali renders the method. The core:</p>
+          <p>XOR the 312 bytes with <code>key[i % 16]</code>, write them back into a copy of <code>classes.dex</code>, and baksmali renders the method — it checks the magic and the endian tag, not the two header fields. Repairing those is what a dex needs to run, not to disassemble. The core:</p>
           <pre><code>const-wide v1, 0x243f6a8885a308d3L
 add-long  v9, v5, v1
 const/16  p1, 0x11          # 17
@@ -368,7 +368,7 @@ SHA-256("hollowdex") = 554d47c35cf8ea95 b4bc6cae39400b7a dbe08223b8cea01d...
         <section id="solve">
           <h2>Step 5 — solve.py</h2>
           <p>The static path is entirely offline — unzip, walk the DEX, decrypt, invert, hash.</p>
-          <p>Three values are literals, because each was recovered once by hand: the folded key out of <code>.rodata</code>, the round constants out of the decrypted smali, and the target ciphertext the method compares against. The decryption stage is there to show its work — it prints the first 32 bytes of plaintext — but the inversion does not consume it. It runs on <code>SHA-256("hollowdex")</code>, which is what those two <code>const-wide</code> literals spell out.</p>
+          <p>Two values are literals, because each was recovered once by hand: the folded key out of <code>.rodata</code>, and the round constants out of the decrypted smali. The target ciphertext is not one of them — the script recomputes it as <code>SHA-256("hollowdex")</code>, which is what those two <code>const-wide</code> values spell out. The decryption stage is there to show its work, printing the first 32 bytes of plaintext, but nothing downstream consumes it.</p>
           <pre><code>#!/usr/bin/env python3
 # solve.py &lt;hollowdex.apk&gt;
 import sys, struct, hashlib, zipfile
