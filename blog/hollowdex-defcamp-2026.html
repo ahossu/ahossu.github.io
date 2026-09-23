@@ -251,7 +251,7 @@ struct.pack_into('&lt;I', raw, 0x08, cksum)</code></pre>
           <p>The DEX header defines <code>checksum</code> at <code>0x08</code> as Adler-32 over everything after itself, and <code>signature</code> at <code>0x0C</code> as SHA-1 over everything after itself. The <code>insns</code> region sits inside both ranges, so flipping 312 bytes invalidates both.</p>
           <p>The order matters — SHA-1 first, because it does not cover the checksum field, then Adler-32, because it does cover the signature.</p>
           <div class="note">
-            The Adler-32 is the one that matters. <code>dex2oat</code> verifies it on a fresh compile, and the runtime cold path rejects the file outright whenever checksum verification is on. ART never validates the SHA-1 against the contents of the file — it only compares the stored field against the copy in the oat file, to catch a stale dex. <code>dexlayout</code> rewrites dex files and leaves a stale signature that nothing notices.
+            The Adler-32 is the one that matters. <code>dex2oat</code> verifies it on a fresh compile, and the runtime cold path rejects the file outright whenever checksum verification is on. ART never checks the SHA-1 at all — on API 34 the only place the field appears is as the offset where the Adler-32 range begins. Android 15 later added a comparison against the copy the oat file carries, which still hashes nothing. <code>dexlayout</code> rewrites dex files and leaves a stale signature that nothing notices.
           </div>
         </section>
 
