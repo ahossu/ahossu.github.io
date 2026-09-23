@@ -268,7 +268,7 @@ jmethodID mid = env-&gt;GetMethodID(cls, "verifyFlag", "(Ljava/lang/String;)Z");
 const uint8_t *art_method = reinterpret_cast&lt;const uint8_t *&gt;(mid);
 uint32_t code_item_off;
 memcpy(&amp;code_item_off, art_method + 0x08, sizeof(code_item_off));</code></pre>
-          <p>One instruction after optimization — <code>19b4: b9400819   ldr w25, [x0, #0x8]</code>. The arithmetic assumes the <code>ArtMethod</code> prologue of a 64-bit build, where <code>declaring_class_</code> is a <code>GcRoot</code> and therefore a 32-bit compressed reference even on ARM64:</p>
+          <p>One instruction after optimization — <code>ldr w25, [x0, #0x8]</code> at <code>0x19b4</code>. The arithmetic assumes the <code>ArtMethod</code> prologue of a 64-bit build, where <code>declaring_class_</code> is a <code>GcRoot</code> and therefore a 32-bit compressed reference even on ARM64:</p>
           <pre><code>+0x00  GcRoot&lt;mirror::Class&gt; declaring_class_   4 bytes
 +0x04  atomic&lt;uint32_t&gt;     access_flags_      4 bytes
 +0x08  uint32_t             dex_code_item_offset_
@@ -320,7 +320,7 @@ static const uint8_t KEY_HALF_2[16] = {
 ...
 for (int i = 0; i &lt; 16; i++) xor_key[i] = KEY_HALF_1[i] ^ KEY_HALF_2[i];</code></pre>
           <p>None of that survives <code>-O2</code>. Both arrays are <code>static const</code>, never address-taken, and consumed only by that loop — so LLVM unrolls it, folds all sixteen XORs at compile time, and dead-strips the sources. What remains is a single 128-bit load:</p>
-          <pre><code>1ac4: 3dc1c140   ldr q0, [x10, #0x700]</code></pre>
+          <pre><code>    1ac4: 3dc1c140     ldr     q0, [x10, #0x700]</code></pre>
           <p>Grepping the 5,632-byte library for either half, or even their 4-byte prefixes, finds nothing. Only the folded result exists — file offset <code>0x700</code>, the first object in <code>.rodata</code>:</p>
           <pre><code>00000700: 590e 7a65 14c3 bea1 e3c1 e781 e3c1 ef01  Y.ze............
 00000710: 2f70 726f 632f 7365 6c66 2f6d 6170 7300  /proc/self/maps.
@@ -512,7 +512,7 @@ if __name__ == '__main__':
 [*] first 32 bytes: 1200380e9a006e1017000e000a01130220003221040029009000130110002312
 [+] preimage : &lt;32 hex chars&gt;
 [+] CTF{&lt;64 hex chars&gt;}</code></pre>
-          <p>There is a shorter route on paper. Let <code>JNI_OnLoad</code> do the work, then read the patched bytecode out of the mapped DEX:</p>
+          <p>There is a shorter route, for a challenge packaged correctly. Let <code>JNI_OnLoad</code> do the work, then read the patched bytecode out of the mapped DEX:</p>
           <pre><code>// JNI_OnLoad has already run by the time the activity is up
 Process.enumerateRanges("r--").forEach(function (r) {
     try {
@@ -520,8 +520,8 @@ Process.enumerateRanges("r--").forEach(function (r) {
         console.log(hexdump(r.base.add(0x062C + 16).readByteArray(312)));
     } catch (_) {}
 });</code></pre>
-          <p>Same 312 bytes, no key extraction, no reversing of the library at all — on a platform where the decryptor lands.</p>
-          <p>That is the catch, and the last section explains why it is not this one. On the shipped build the read comes back still encrypted, if the app survives startup at all.</p>
+          <p>Same 312 bytes, no key extraction, no reversing of the library at all — on a build where the decryptor lands.</p>
+          <p>This is not that build, and the last section explains why. The read comes back still encrypted, on any Android version, assuming the app gets far enough to be read at all.</p>
         </section>
 
         <section id="manifest">
