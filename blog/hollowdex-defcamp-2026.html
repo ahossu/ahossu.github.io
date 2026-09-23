@@ -370,134 +370,142 @@ SHA-256("hollowdex") = 554d47c35cf8ea95 b4bc6cae39400b7a dbe08223b8cea01d...
           <p>The static path is entirely offline — unzip, walk the DEX, decrypt, invert, hash.</p>
           <p>Two values are hardcoded because they were recovered once by hand: the key out of <code>.rodata</code>, and the round constants out of the decrypted smali. The script prints the plaintext it produces, but the inversion runs on those constants.</p>
           <pre><code>#!/usr/bin/env python3
-"""
-solve.py -- HollowDex CTF challenge solution
+# solve.py &lt;hollowdex.apk&gt;
+import sys, struct, hashlib, zipfile
 
-Usage:
-    python3 solve.py hollowdex.apk
-"""
-import hashlib, struct, sys, zipfile
-
+# XOR_KEY = first 16 bytes of .rodata in libhollowdex.so (pre-computed KEY_HALF_1 ^ KEY_HALF_2)
 XOR_KEY = bytes.fromhex("590e7a6514c3bea1e3c1e781e3c1ef01")
-
-K = [0x243F6A8885A308D3, 0x13198A2E03707344, 0xA4093822299F31D0]
-M = 0xFFFFFFFFFFFFFFFF
 
 TARGET_CLASS  = b'Lcom/hollowdex/Verifier;'
 TARGET_METHOD = b'verifyFlag'
+
+# round keys: consecutive 64-bit chunks of pi hex fractional part
+K = [0x243F6A8885A308D3, 0x13198A2E03707344, 0xA4093822299F31D0]
+M = 0xFFFFFFFFFFFFFFFF
 
 
 def rotl64(v, n):
     return ((v &lt;&lt; n) | (v &gt;&gt; (64 - n))) &amp; M
 
-
 def F(R, Ki):
     return rotl64((R + Ki) &amp; M, 17) ^ Ki
 
-
-def inverse(L, R):
+def inverse_arx(L, R):
     for Ki in reversed(K):
         R, L = L, (R ^ F(L, Ki)) &amp; M
     return L, R
 
 
-def u32(d, off):
-    return struct.unpack_from('&lt;I', d, off)[0]
+def u32(data, off): return struct.unpack_from('&lt;I', data, off)[0]
+def u16(data, off): return struct.unpack_from('&lt;H', data, off)[0]
 
-
-def u16(d, off):
-    return struct.unpack_from('&lt;H', d, off)[0]
-
-
-def read_uleb128(d, off):
+def read_uleb128(data, off):
     result, shift = 0, 0
     while True:
-        b = d[off]; off += 1
+        b = data[off]; off += 1
         result |= (b &amp; 0x7F) &lt;&lt; shift
         if not (b &amp; 0x80):
             return result, off
         shift += 7
 
+def parse_string(data, string_ids_off, idx):
+    ptr = u32(data, string_ids_off + idx * 4)
+    _, off = read_uleb128(data, ptr)
+    end = data.index(b'\x00', off)
+    return data[off:end]
 
-def parse_string(d, string_ids_off, idx):
-    ptr = u32(d, string_ids_off + idx * 4)
-    _, off = read_uleb128(d, ptr)
-    return d[off:d.index(b'\x00', off)]
 
+def find_code_item(raw):
+    string_ids_off  = u32(raw, 0x3C)
+    type_ids_size   = u32(raw, 0x40)
+    type_ids_off    = u32(raw, 0x44)
+    method_ids_size = u32(raw, 0x58)
+    method_ids_off  = u32(raw, 0x5C)
+    class_defs_size = u32(raw, 0x60)
+    class_defs_off  = u32(raw, 0x64)
 
-def find_code_item(dex):
-    string_ids_off  = u32(dex, 0x3C)
-    type_ids_size   = u32(dex, 0x40)
-    type_ids_off    = u32(dex, 0x44)
-    method_ids_size = u32(dex, 0x58)
-    method_ids_off  = u32(dex, 0x5C)
-    class_defs_size = u32(dex, 0x60)
-    class_defs_off  = u32(dex, 0x64)
+    target_type_idx = None
+    for ti in range(type_ids_size):
+        si = u32(raw, type_ids_off + ti * 4)
+        if parse_string(raw, string_ids_off, si) == TARGET_CLASS:
+            target_type_idx = ti
+            break
+    assert target_type_idx is not None, "Verifier class not found"
 
-    type_idx = next(ti for ti in range(type_ids_size)
-                    if parse_string(dex, string_ids_off,
-                                    u32(dex, type_ids_off + ti * 4)) == TARGET_CLASS)
+    target_method_idx = None
+    for mi in range(method_ids_size):
+        base = method_ids_off + mi * 8
+        if u16(raw, base) != target_type_idx:
+            continue
+        if parse_string(raw, string_ids_off, u32(raw, base + 4)) == TARGET_METHOD:
+            target_method_idx = mi
+            break
+    assert target_method_idx is not None, "verifyFlag not found"
 
-    method_idx = next(mi for mi in range(method_ids_size)
-                      if u16(dex, method_ids_off + mi * 8) == type_idx
-                      and parse_string(dex, string_ids_off,
-                                       u32(dex, method_ids_off + mi * 8 + 4)) == TARGET_METHOD)
-
-    class_data_off = next(u32(dex, class_defs_off + cd * 32 + 24)
-                          for cd in range(class_defs_size)
-                          if u32(dex, class_defs_off + cd * 32) == type_idx)
+    class_data_off = None
+    for cd in range(class_defs_size):
+        base = class_defs_off + cd * 32
+        if u32(raw, base) == target_type_idx:
+            class_data_off = u32(raw, base + 24)
+            break
+    assert class_data_off
 
     off = class_data_off
-    sf, off = read_uleb128(dex, off)
-    inf, off = read_uleb128(dex, off)
-    dm, off = read_uleb128(dex, off)
-    vm, off = read_uleb128(dex, off)
+    sf, off = read_uleb128(raw, off)
+    if_, off = read_uleb128(raw, off)
+    dm, off = read_uleb128(raw, off)
+    vm, off = read_uleb128(raw, off)
+    for _ in range(sf + if_):
+        _, off = read_uleb128(raw, off)
+        _, off = read_uleb128(raw, off)
 
-    for _ in range(sf + inf):
-        _, off = read_uleb128(dex, off)
-        _, off = read_uleb128(dex, off)
-
-    acc = 0
+    idx_acc = 0
     for list_idx in range(dm + vm):
         if list_idx == dm:
-            acc = 0            # diff is relative to the same list
-        diff, off = read_uleb128(dex, off)
-        acc += diff
-        _, off = read_uleb128(dex, off)
-        code_off, off = read_uleb128(dex, off)
-        if acc == method_idx:
-            return code_off
+            idx_acc = 0
+        diff, off = read_uleb128(raw, off)
+        idx_acc += diff
+        _, off = read_uleb128(raw, off)
+        ci, off = read_uleb128(raw, off)
+        if idx_acc == target_method_idx:
+            return ci
+    raise RuntimeError("code_item not found")
 
-    raise RuntimeError('verifyFlag code_item not found')
 
+def solve(apk_path):
+    with zipfile.ZipFile(apk_path) as z:
+        raw = bytearray(z.read('classes.dex'))
 
-def main():
-    if len(sys.argv) != 2:
-        sys.exit(f'usage: python3 {sys.argv[0]} &lt;hollowdex.apk&gt;')
+    ci_off = find_code_item(raw)
+    insns_size = u32(raw, ci_off + 12)
+    insns_off  = ci_off + 16
+    insns_len  = insns_size * 2
 
-    with zipfile.ZipFile(sys.argv[1]) as z:
-        dex = z.read('classes.dex')
+    print(f"[*] code_item @ 0x{ci_off:08X}, insns_len={insns_len}")
 
-    ci = find_code_item(dex)
-    insns_len = u32(dex, ci + 12) * 2
-    print(f'[*] code_item @ 0x{ci:08X}, insns_len={insns_len}')
+    insns = bytearray(raw[insns_off:insns_off + insns_len])
+    for i in range(len(insns)):
+        insns[i] ^= XOR_KEY[i % 16]
 
-    enc = dex[ci + 16:ci + 16 + insns_len]
-    dec = bytes(b ^ XOR_KEY[i % 16] for i, b in enumerate(enc))
-    print(f'[*] decrypted {len(dec)} insn bytes')
-    print(f'[*] first 32 bytes: {dec[:32].hex()}')
+    print(f"[*] decrypted {len(insns)} insn bytes")
+    print(f"[*] first 32 bytes: {insns[:32].hex()}")
 
-    expected = hashlib.sha256(b'hollowdex').digest()[:16]
-    L, R = inverse(int.from_bytes(expected[:8], 'big'),
-                   int.from_bytes(expected[8:], 'big'))
-    preimage = L.to_bytes(8, 'big') + R.to_bytes(8, 'big')
+    # EXP_L || EXP_R = SHA-256("hollowdex")[0:16] -- visible in const-wide opcodes after decryption
+    expected = hashlib.sha256(b"hollowdex").digest()[:16]
+    L_exp = int.from_bytes(expected[:8], 'big')
+    R_exp = int.from_bytes(expected[8:], 'big')
 
-    print(f'[+] preimage : {preimage.hex()}')
-    print(f'[+] CTF{{{hashlib.sha256(preimage).hexdigest()}}}')
+    L_flag, R_flag = inverse_arx(L_exp, R_exp)
+    flag_bytes = L_flag.to_bytes(8, 'big') + R_flag.to_bytes(8, 'big')
+    flag = hashlib.sha256(flag_bytes).hexdigest()
+    print(f"[+] preimage : {flag_bytes.hex()}")
+    print(f"[+] CTF{{{flag}}}")
 
 
 if __name__ == '__main__':
-    main()</code></pre>
+    if len(sys.argv) != 2:
+        sys.exit(f"usage: python3 {sys.argv[0]} &lt;hollowdex.apk&gt;")
+    solve(sys.argv[1])</code></pre>
           <p>Expected output:</p>
           <pre><code>[*] code_item @ 0x0000062C, insns_len=312
 [*] decrypted 312 insn bytes
