@@ -362,7 +362,7 @@ SHA-256("hollowdex") = 554d47c35cf8ea95 b4bc6cae39400b7a dbe08223b8cea01d...
     for Ki in reversed(K):
         R, L = L, (R ^ F(L, Ki)) &amp; M
     return L, R</code></pre>
-          <p>That gives the 16-byte preimage <code>verifyFlag</code> accepts. The flag is SHA-256 of those bytes, so forcing the comparison to return true would never produce it — the preimage is the answer, not the verdict.</p>
+          <p>That gives the 16-byte preimage <code>verifyFlag</code> accepts. Swapping the two constants yields a different preimage and no complaint from anything, so it is worth running the cipher forward on the result and checking that it lands back on <code>EXP_L</code> and <code>EXP_R</code>. The flag is SHA-256 of those bytes, so forcing the comparison to return true would never produce it — the preimage is the answer, not the verdict.</p>
         </section>
 
         <section id="solve">

