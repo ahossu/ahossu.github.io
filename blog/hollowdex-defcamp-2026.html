@@ -370,14 +370,19 @@ SHA-256("hollowdex") = 554d47c35cf8ea95 b4bc6cae39400b7a dbe08223b8cea01d...
           <p>The static path is entirely offline — unzip, walk the DEX, decrypt, invert, hash.</p>
           <p>Two values are hardcoded because they were recovered once by hand: the key out of <code>.rodata</code>, and the round constants out of the decrypted smali. The script prints the plaintext it produces, but the inversion runs on those constants.</p>
           <pre><code>#!/usr/bin/env python3
-# solve.py &lt;hollowdex.apk&gt;
-import sys, struct, hashlib, zipfile
+"""
+solve.py -- HollowDex CTF challenge solution
+
+Usage:
+    python3 solve.py &lt;hollowdex.apk&gt;
+"""
+import hashlib, struct, sys, zipfile
 
 # XOR_KEY = first 16 bytes of .rodata in libhollowdex.so (pre-computed KEY_HALF_1 ^ KEY_HALF_2)
 XOR_KEY = bytes.fromhex("590e7a6514c3bea1e3c1e781e3c1ef01")
 
-TARGET_CLASS  = b'Lcom/hollowdex/Verifier;'
-TARGET_METHOD = b'verifyFlag'
+TARGET_CLASS  = b"Lcom/hollowdex/Verifier;"
+TARGET_METHOD = b"verifyFlag"
 
 # round keys: consecutive 64-bit chunks of pi hex fractional part
 K = [0x243F6A8885A308D3, 0x13198A2E03707344, 0xA4093822299F31D0]
@@ -387,8 +392,10 @@ M = 0xFFFFFFFFFFFFFFFF
 def rotl64(v, n):
     return ((v &lt;&lt; n) | (v &gt;&gt; (64 - n))) &amp; M
 
+
 def F(R, Ki):
     return rotl64((R + Ki) &amp; M, 17) ^ Ki
+
 
 def inverse_arx(L, R):
     for Ki in reversed(K):
@@ -396,8 +403,9 @@ def inverse_arx(L, R):
     return L, R
 
 
-def u32(data, off): return struct.unpack_from('&lt;I', data, off)[0]
-def u16(data, off): return struct.unpack_from('&lt;H', data, off)[0]
+def u32(data, off): return struct.unpack_from("&lt;I", data, off)[0]
+def u16(data, off): return struct.unpack_from("&lt;H", data, off)[0]
+
 
 def read_uleb128(data, off):
     result, shift = 0, 0
@@ -408,10 +416,11 @@ def read_uleb128(data, off):
             return result, off
         shift += 7
 
+
 def parse_string(data, string_ids_off, idx):
     ptr = u32(data, string_ids_off + idx * 4)
     _, off = read_uleb128(data, ptr)
-    end = data.index(b'\x00', off)
+    end = data.index(b"\x00", off)
     return data[off:end]
 
 
@@ -430,7 +439,8 @@ def find_code_item(raw):
         if parse_string(raw, string_ids_off, si) == TARGET_CLASS:
             target_type_idx = ti
             break
-    assert target_type_idx is not None, "Verifier class not found"
+    if target_type_idx is None:
+        raise RuntimeError("Verifier class not found")
 
     target_method_idx = None
     for mi in range(method_ids_size):
@@ -440,7 +450,8 @@ def find_code_item(raw):
         if parse_string(raw, string_ids_off, u32(raw, base + 4)) == TARGET_METHOD:
             target_method_idx = mi
             break
-    assert target_method_idx is not None, "verifyFlag not found"
+    if target_method_idx is None:
+        raise RuntimeError("verifyFlag not found")
 
     class_data_off = None
     for cd in range(class_defs_size):
@@ -448,7 +459,8 @@ def find_code_item(raw):
         if u32(raw, base) == target_type_idx:
             class_data_off = u32(raw, base + 24)
             break
-    assert class_data_off
+    if not class_data_off:
+        raise RuntimeError("class_data not found")
 
     off = class_data_off
     sf, off = read_uleb128(raw, off)
@@ -502,10 +514,14 @@ def solve(apk_path):
     print(f"[+] CTF{{{flag}}}")
 
 
-if __name__ == '__main__':
+def main():
     if len(sys.argv) != 2:
         sys.exit(f"usage: python3 {sys.argv[0]} &lt;hollowdex.apk&gt;")
-    solve(sys.argv[1])</code></pre>
+    solve(sys.argv[1])
+
+
+if __name__ == "__main__":
+    main()</code></pre>
           <p>Expected output:</p>
           <pre><code>[*] code_item @ 0x0000062C, insns_len=312
 [*] decrypted 312 insn bytes
