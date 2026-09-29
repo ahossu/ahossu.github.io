@@ -190,6 +190,28 @@
         <section>
           <div class="posts-list">
 
+            <a class="post-card" href="nextjs-react2shell-malware">
+              <h2 class="post-title">Next.js React2Shell — Reverse Engineering the Post-Exploitation Malware</h2>
+              <p class="post-meta">
+                <span>Malware Analysis • Reverse Engineering</span>
+                <span>IMC '26</span>
+                <span>by Alexandru Hossu</span>
+              </p>
+              <div class="post-tags">
+                <span class="tag">Linux</span>
+                <span class="tag">Windows</span>
+                <span class="tag">Malware Analysis</span>
+                <span class="tag">BYOVD</span>
+                <span class="tag">Anti-Analysis</span>
+                <span class="tag">Cryptominer</span>
+                <span class="tag">Mirai</span>
+                <span class="tag">CVE-2025-55182</span>
+              </div>
+              <p class="post-excerpt">
+                React2Shell is an unauthenticated remote code execution bug in the React Server Components Flight protocol — one HTTP request, no authentication, CVSS 10.0. A reactive telescope and a set of Next.js honeypots recorded 13,253,566 requests carrying the header that triggers it, about half of them scanning that installs nothing. I reversed the binaries that the rest delivered. Thirteen were worth writing up: seven belong to a mining operation, six install a bot. A Windows dropper loads a signed driver into ring 0 to switch off four CPU prefetchers, which buys RandomX a percent or two. A Linux bot forks a pair that watch each other through <code>ptrace</code>: one seizes the other and exits to free the tracer slot, and attaching to either half gets you killed by its twin.
+              </p>
+            </a>
+
             <a class="post-card" href="nephilim-defcamp-2026">
               <h2 class="post-title">NEPHILIM (DefCamp CTF 2026) — Stale RCU Reference in a Kernel Module</h2>
               <p class="post-meta">
